@@ -25,7 +25,7 @@ Nitpicking**.
 - Install [Deno](https://docs.deno.com/runtime/getting_started/installation/)
 - Run this command to install `karen`:
   ```shell
-  deno install --global --allow-run --allow-env --allow-read --allow-write --allow-net --unstable-kv https://raw.githubusercontent.com/specialblend/karen/refs/heads/main/karen.ts
+  deno install --global --allow-run --allow-env --allow-read --allow-write --allow-net --unstable-kv https://raw.githubusercontent.com/specialblend/karen/main/karen.ts
   ```
 
 ## Usage
