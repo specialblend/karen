@@ -4,18 +4,18 @@ import { DefaultSettings, validateSettings } from "./Settings.ts";
 
 export function getStorageDir() {
     const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "";
-    return new URL(`${home}/.karen`, import.meta.url);
+    return `${home}/.karen`;
 }
 
-export function getStoragePath(storageDir: URL) {
-    return new URL(`${storageDir}/karen.db`, import.meta.url);
+export function getStoragePath(storageDir: string) {
+    return `${storageDir}/karen.db`;
 }
 
-export function getSettingsPath(storageDir: URL) {
-    return new URL(`${storageDir}/settings.json`, import.meta.url);
+export function getSettingsPath(storageDir: string) {
+    return `${storageDir}/settings.json`;
 }
 
-export async function touchSettings(storageDir: URL) {
+export async function touchSettings(storageDir: string) {
     const settingsPath = getSettingsPath(storageDir);
     try {
         await Deno.stat(settingsPath);
@@ -28,7 +28,7 @@ export async function touchSettings(storageDir: URL) {
     }
 }
 
-export async function getSettings(storageDir: URL) {
+export async function getSettings(storageDir: string) {
     await touchSettings(storageDir);
     const settingsPath = getSettingsPath(storageDir);
     const text = await Deno.readTextFile(settingsPath);
@@ -43,7 +43,7 @@ export async function getSettings(storageDir: URL) {
     }
 }
 
-export async function touchStorageDir(): Promise<URL> {
+export async function touchStorageDir(): Promise<string> {
     const storageDir = getStorageDir();
     try {
         await Deno.mkdir(storageDir, { recursive: true });
@@ -64,9 +64,9 @@ export async function touchId(storage: Deno.Kv) {
     return id;
 }
 
-export async function getStorage(storageDir: URL): Promise<Deno.Kv> {
+export async function getStorage(storageDir: string): Promise<Deno.Kv> {
     const storagePath = getStoragePath(storageDir);
-    const storage = await Deno.openKv(storagePath.toString());
+    const storage = await Deno.openKv(storagePath);
     await touchId(storage);
     return storage;
 }

@@ -113,12 +113,12 @@ export async function main() {
     .action(
       function printPath(options: { storage?: boolean; settings?: boolean }) {
         if (options.storage) {
-          return console.log(getStoragePath(storageDir).pathname);
+          return console.log(getStoragePath(storageDir));
         }
         if (options.settings) {
-          return console.log(getSettingsPath(storageDir).pathname);
+          return console.log(getSettingsPath(storageDir));
         }
-        return console.log(storageDir.pathname);
+        return console.log(storageDir);
       },
     );
 
@@ -185,7 +185,7 @@ export async function main() {
             stdout: "inherit",
             stderr: "inherit",
           } as const;
-          const args = [settingsPath.pathname];
+          const args = [settingsPath];
           const options = { args, ...inherit };
           const process = new Deno.Command(editor, options);
           await process.output();
