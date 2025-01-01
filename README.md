@@ -32,18 +32,23 @@ Nitpicking**.
 
 ### Quick Start
 
-- Ensure Ollama is running on your local machine.
-- By default, KAREN will look for Ollama at `http://localhost:11434`.
-- You can change this by editing the `.karen/settings.json` file in your home
-  directory.
+#### Setup Ollama
 
-1. Configure KAREN with your JIRA credentials:
+- Ensure Ollama is running on your local machine. By default, KAREN will look
+  for Ollama at `http://localhost:11434`
+
+- Review `.karen/settings.json` in your home directory.
+
+**Important!** Check the models in `.karen/settings.json` and make sure you
+**choose a model size that will fit into your VRAM**.
+
+#### Configure KAREN with your JIRA credentials:
 
 ```shell
 karen config setup
 ```
 
-2. Pull issues from a JIRA project into your local storage:
+#### Pull issues from a JIRA project into your local storage:
 
 If your tickets look like EXAMPLE-1234, you can pull them like this:
 
@@ -51,7 +56,7 @@ If your tickets look like EXAMPLE-1234, you can pull them like this:
 karen pull project EXAMPLE
 ```
 
-3. Review, estimate, and generate a report for an issue using AI:
+#### Review, estimate, and generate a report for an issue using AI:
 
 ```shell
 karen report EXAMPLE-1234
@@ -63,7 +68,7 @@ You can also generate a report for all issues
 karen report --all
 ```
 
-5. Publish your report to JIRA as a comment:
+#### Publish your report to JIRA as a comment:
 
 ```shell
 karen report EXAMPLE-1234 --publish
