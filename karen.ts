@@ -9,7 +9,7 @@ import { AuthoringService, Edit } from "./src/Authoring.ts";
 import { ConfigStore, KnownConfigParams, remember } from "./src/Config.ts";
 import { Console } from "./src/Console.ts";
 import { EstimateStore } from "./src/Estimate.ts";
-import { ReviewStore } from "./src/Review.ts";
+import { Review, ReviewStore } from "./src/Review.ts";
 import { SettingsV1 } from "./src/Settings.ts";
 import { Store } from "./src/Store.ts";
 
@@ -48,8 +48,8 @@ export function ListResource<T>(store: Store<T>) {
         .catch(console.die);
     }
     return await Array
-      .fromAsync(store.keys())
-      .then((data) => console.print(data, options.format))
+      .fromAsync(store.list())
+      .then((data) => console.print(data.map(store.summarize), options.format))
       .catch(console.die);
   };
 }
@@ -296,7 +296,7 @@ export async function main() {
           let reviews = await Array.fromAsync(store.list());
 
           if (options.sort) {
-            reviews = reviews.sort((a: any, b: any) => b.score - a.score);
+            reviews = reviews.sort((a: any, b: any) => a.score - b.score);
           }
 
           if (options.threshold) {
@@ -306,14 +306,8 @@ export async function main() {
             );
           }
 
-          if (options.details) {
-            return console.print(reviews, options.format);
-          }
-
-          return console.print(
-            reviews.map((review: any) => review.issue.key),
-            options.format,
-          );
+          if (options.details) return console.print(reviews, options.format);
+          return console.print(reviews.map(store.summarize), options.format);
         }),
     );
 

@@ -2,6 +2,10 @@ import * as Fmt from "jsr:@std/fmt/colors";
 import { nanoid } from "npm:nanoid";
 import { DefaultSettings, validateSettings } from "./Settings.ts";
 
+export type Json = string | number | boolean | null | Json[] | {
+    [key: string]: Json;
+};
+
 export function getStorageDir() {
     const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "";
     return `${home}/.karen`;

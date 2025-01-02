@@ -1,7 +1,7 @@
 import Jira2Md from "npm:jira2md";
 import * as Yaml from "jsr:@std/yaml";
 
-import { Issue, IssueService } from "./Issue.ts";
+import { Issue, IssueService, IssueStore } from "./Issue.ts";
 import { Review, ReviewStore } from "./Review.ts";
 import { Estimate, EstimateStore } from "./Estimate.ts";
 import { Store } from "./Store.ts";
@@ -18,7 +18,14 @@ export type Report = {
 export type NormalizedEstimate = Estimate & { normalizedConfidence: number };
 
 export function ReportStore(storage: Deno.Kv) {
-    return Store<Report>(["reports"], storage);
+    return Store<Report>(["reports"], storage, function summarize(report) {
+        const { issue, review, estimate } = report;
+        return {
+            issue: IssueStore(storage).summarize(issue),
+            review: ReviewStore(storage).summarize(review),
+            estimate: EstimateStore(storage).summarize(estimate),
+        };
+    });
 }
 
 export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {

@@ -8,5 +8,12 @@ export type Estimate = {
 };
 
 export function EstimateStore(storage: Deno.Kv): Store<Estimate> {
-    return Store<Estimate>(["estimates"], storage);
+    return Store<Estimate>(
+        ["estimates"],
+        storage,
+        function summarize(estimate) {
+            const { issueKey, confidence, storyPoints } = estimate;
+            return { issueKey, confidence, storyPoints };
+        },
+    );
 }
