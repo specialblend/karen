@@ -3,29 +3,18 @@ import * as JSONSchema from "npm:jsonschema";
 import * as Yaml from "jsr:@std/yaml";
 import Jira2Md from "npm:jira2md";
 
-import { Issue } from "./Issue.ts";
+import { Issue, IssueService, serializeIssue } from "./Issue.ts";
 import { Store } from "./Store.ts";
-import { AuthoringService } from "./Authoring.ts";
 import { SettingsV1 } from "./Settings.ts";
 
 export type Review = {
     key: string;
     model: string;
-    checksum: string;
     score: number;
     checklist: ChecklistResult[];
     estimate: Estimate;
-    normalizedEstimate: NormalizedEstimate;
+    normalizedEstimate: Estimate;
     issue: Issue;
-};
-
-export type ReviewSummary = {
-    key: string;
-    score: number;
-    normalizedEstimate: NormalizedEstimate;
-    issue: {
-        summary: string;
-    };
 };
 
 export type Estimate = {
@@ -34,7 +23,7 @@ export type Estimate = {
 };
 
 export type NormalizedEstimate = {
-    confidence: number;
+    confidenceRange: [number, number];
     storyPointsRange: [number, number];
 };
 
@@ -58,10 +47,10 @@ export function ReviewService(
     storage: Deno.Kv,
     settings: SettingsV1,
 ) {
-    const authoring = AuthoringService(settings);
     const reviewStore = ReviewStore(storage);
+    const issueService = IssueService(storage);
 
-    return { status, review };
+    return { status, review, publish, format };
 
     async function status() {
         await ollama.ps();
@@ -69,8 +58,10 @@ export function ReviewService(
 
     async function review(
         issue: Issue,
-        options: { model?: string } = {},
+        options: { force?: boolean; model?: string } = {},
     ): Promise<Review> {
+        const existing = await reviewStore.get(issue.key).catch(() => null);
+        if (existing && !options.force) return existing;
         const model = options.model ?? settings.assistant.review.model;
         const options1 = { ...options, model };
         const [checklist, estimate] = await Promise.all([
@@ -78,8 +69,7 @@ export function ReviewService(
             runEstimate(issue, options1),
         ]);
         const score = calculateScore(checklist);
-        const normalizedEstimate = normalizeEstimate(score, estimate);
-        const checksum = await authoring.checksum(issue);
+        const normalizedEstimate = normalizeEstimate(score, estimate, settings);
         const review = {
             key: issue.key,
             model,
@@ -87,7 +77,6 @@ export function ReviewService(
             checklist,
             estimate,
             normalizedEstimate,
-            checksum,
             issue,
         };
         return await reviewStore.put(issue.key, review);
@@ -113,7 +102,7 @@ export function ReviewService(
         const prompt = [
             instructions,
             "---",
-            authoring.serialize(issue),
+            serializeIssue(issue),
         ].join("\n\n");
         const data = await ollama
             .generate({ model, prompt, format })
@@ -159,68 +148,80 @@ export function ReviewService(
         const prompt = [
             instructions,
             "---",
-            authoring.serialize(issue),
+            serializeIssue(issue),
         ].join("\n\n");
 
-        const res = await ollama
+        return await ollama
             .generate({ model, prompt, format })
             .then(({ response }) => JSON.parse(response));
-
-        return {
-            confidence: res.confidence,
-            storyPoints: res.storyPoints,
-        };
     }
 
-    function calculateScore(checklist: ChecklistResult[]): number {
-        const totalWeight = checklist
-            .map(({ entry: { weight } }) => weight)
-            .reduce((a, b) => a + b, 0);
-        const score = checklist
-            .map(({ value, entry: { weight } }) => value ? weight : 0)
-            .reduce((a, b) => a + b, 0);
-        return score / totalWeight;
-    }
-
-    function normalizeEstimate(
-        score: number,
-        estimate: Estimate,
-    ): NormalizedEstimate {
-        const { confidence, storyPoints } = estimate;
-        return {
-            confidence: confidence * score,
-            storyPointsRange: [storyPoints * score, storyPoints],
-        };
+    async function publish(review: Review) {
+        const text = format(review, { format: "jira" });
+        return await issueService.upsertComment(review.issue, text);
     }
 }
 
-async function publish(report: Report) {
-    const text = await format(report, { format: "jira" });
-    return await issueService.upsertComment(report.issue, text);
-}
-
-async function format(review: Review, options: { format: string }) {
-    const markdown = fmtReportMarkdown(review);
+function format(
+    review: Review,
+    options: { format: "jira" | "markdown" | "json" | "yaml" | string },
+): string {
+    const json = JSON.stringify(review);
+    if (options.format === "json") return json;
+    if (options.format === "yaml") return Yaml.stringify(JSON.parse(json));
+    const markdown = fmtReviewMarkdown(review);
     if (options.format === "markdown") return markdown;
-    return await Jira2Md.to_jira(markdown);
+    return Jira2Md.to_jira(markdown);
 }
 
-function normalizeEstimate(estimate: Estimate, review: Review) {
-    const normalizedConfidence = Math.round(
-        estimate.confidence * review.score,
+function calculateScore(checklist: ChecklistResult[]): number {
+    const totalWeight = checklist
+        .map(({ entry: { weight } }) => weight)
+        .reduce((a, b) => a + b, 0);
+    const score = checklist
+        .map(({ value, entry: { weight } }) => value ? weight : 0)
+        .reduce((a, b) => a + b, 0);
+    return score / totalWeight;
+}
+
+function roundScale(value: number, scale: number[]) {
+    // find scale value closest to value
+    return scale.reduce(
+        (a, b) => Math.abs(a - value) < Math.abs(b - value) ? a : b,
+        scale[0],
     );
-    return { ...estimate, normalizedConfidence };
 }
 
-function fmtStoryPointsRange(normalizedEstimate: NormalizedEstimate) {
-    const { storyPointsRange } = normalizedEstimate;
-    const [low, high] = storyPointsRange;
-    if (low === high) return low;
-    return `${low} - ${high}`;
+function normalizeEstimate(
+    score: number,
+    estimate: Estimate,
+    settings: SettingsV1,
+): Estimate {
+    const { confidence, storyPoints } = estimate;
+    const scale = settings.assistant.estimate.storyPoints.scale.map((
+        { points },
+    ) => points);
+    const averageConfidence = ((confidence * score) + confidence) / 2;
+    const averageStoryPoints = ((storyPoints * score) + storyPoints) / 2;
+    return {
+        confidence: Math.round(averageConfidence),
+        storyPoints: roundScale(averageStoryPoints, scale),
+    };
 }
 
-function fmtReportMarkdown(review: Review) {
-    const score = `${Math.round(review.score * 100)}%`;
+function fmtConfidence(review: Review) {
+    return `${Math.round(review.normalizedEstimate.confidence)}%`;
+}
+
+function fmtStoryPoints(review: Review) {
+    return `${review.normalizedEstimate.storyPoints}`;
+}
+
+function fmtScore(review: Review) {
+    return `${Math.round(review.score * 100)}%`;
+}
+
+function fmtReviewMarkdown(review: Review) {
     const checklist = review.checklist.map(
         function fmtChecklistEntry({ entry, value }) {
             if (value) return `{color:green}**✓**{color} ${entry.description}`;
@@ -235,12 +236,12 @@ function fmtReportMarkdown(review: Review) {
 - ${checklist.join("\n- ")}
 
 \`\`\`markdown
-Refinement Score: ${score}
-Estimated Story Points: ${review.estimate.storyPoints}
-Confidence (Base / Normalized): ${review.estimate.confidence}% / ${review.normalizedEstimate.confidence}%
-Models: ${review.model} / ${review.estimate.model}
+Refinement Score: ${fmtScore(review)}
+Estimated Story Points: ${fmtStoryPoints(review)}
+Confidence: ${fmtConfidence(review)}
+Model: ${review.model}
 \`\`\`
 
-*Generated with {color:red}♥{color} by [KAREN](https://github.com/specialblend/karen)*
+*Generated with {color:purple}♥{color} by [KAREN](https://github.com/specialblend/karen)*
 `;
 }

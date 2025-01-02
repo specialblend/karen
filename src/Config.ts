@@ -55,7 +55,7 @@ export const KnownConfigParams: ConfigParam[] = [
 const console = Console();
 
 export function ConfigStore(storage: Deno.Kv): Store<string> {
-    return Store<string>(["config"], storage, (value) => value);
+    return Store<string>(["config"], storage);
 }
 
 export async function remember(

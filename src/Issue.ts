@@ -1,5 +1,10 @@
+import Jira2Md from "npm:jira2md";
+import * as Yaml from "jsr:@std/yaml";
+import * as Fmt from "jsr:@std/fmt/colors";
+import * as Diff from "npm:diff";
 import { assert } from "jsr:@std/assert/assert";
 import { Store } from "./Store.ts";
+import { Console } from "./Console.ts";
 import { JIRA_PASSWORD, JIRA_URL, JIRA_USERNAME, remember } from "./Config.ts";
 
 export type Project = {
@@ -62,44 +67,77 @@ export type IssueMeta = {
     creator: Author;
 };
 
+export type Edit = {
+    meta: Pick<IssueMeta, "key" | "summary">;
+    description: string;
+};
+
+const console = Console();
+
 export function ProjectStore(storage: Deno.Kv): Store<Project> {
-    function summarize(project: Project) {
-        const { key, name } = project;
-        return { key, name };
-    }
-    return Store<Project>(["projects"], storage, summarize);
+    return Store<Project>(["projects"], storage);
 }
 
 export function BoardStore(storage: Deno.Kv): Store<Board> {
-    function summarize(board: Board) {
-        const { name, location: { projectKey = null } = {} } = board;
-        return { name, projectKey };
-    }
-    return Store<Board>(["boards"], storage, summarize);
+    return Store<Board>(["boards"], storage);
 }
 
 export function IssueStore(storage: Deno.Kv): Store<Issue> {
-    function summarize(issue: Issue) {
-        const { key, fields: { summary } } = issue;
-        return { key, fields: { summary } };
-    }
-    return Store<Issue>(["issues"], storage, summarize);
+    return Store<Issue>(["issues"], storage);
 }
 
 export function MyCommentStore(storage: Deno.Kv): Store<Comment> {
-    function summarize(comment: Comment) {
-        const { id, body } = comment;
-        return { id, body };
-    }
-    return Store<Comment>(["my-comments"], storage, summarize);
+    return Store<Comment>(["my-comments"], storage);
 }
 
 export function EditStore(storage: Deno.Kv): Store<Issue> {
-    function summarize(issue: Issue) {
-        const { key, fields: { summary } } = issue;
-        return { key, fields: { summary } };
+    return Store<Issue>(["issues-edit"], storage);
+}
+
+export function serializeIssue(issue: Issue) {
+    const { id, key, self } = issue;
+    const { summary, description, created, updated, creator } = issue.fields;
+    const meta: IssueMeta = {
+        ...{ id, key, summary },
+        ...{ self, created, updated, creator },
+    };
+    const header = Yaml.stringify(meta);
+    const body = Jira2Md.to_markdown(description || "");
+    return `---\n${header}---${body}`;
+}
+
+export async function deserializeEdit(text: string): Promise<Edit> {
+    const parseYaml = async (text: string) => await Yaml.parse(text) as JSON;
+    async function parseHeader(text: string) {
+        const meta = await parseYaml(text)
+            .catch(console.pitch("header is not valid YAML"));
+        assert(typeof meta === "object", "header is not a YAML object");
+        assert("id" in meta, "header missing id");
+        assert("key" in meta, "header missing key");
+        assert("summary" in meta, "header missing summary");
+        assert(typeof meta.id === "string", "header missing id");
+        assert(typeof meta.key === "string", "header missing key");
+        assert(typeof meta.summary === "string", "header missing summary");
+        const { id, key, summary } = meta;
+        return { id, key, summary };
     }
-    return Store<Issue>(["issues-edit"], storage, summarize);
+    const [, header, body] = text.split("---");
+    const meta = await parseHeader(header);
+    const description = Jira2Md.to_jira(body);
+    return { meta, description };
+}
+
+export function diffIssue(issue: Issue, edited: Issue) {
+    const original = serializeIssue(issue);
+    const updated = serializeIssue(edited);
+    const filename = `${issue.key}.md`;
+    const patch = Diff.createPatch(filename, original, updated);
+    function fmtLine(line: string) {
+        if (line.startsWith("+")) return Fmt.green(line);
+        if (line.startsWith("-")) return Fmt.red(line);
+        return line;
+    }
+    return patch.split("\n").map(fmtLine).join("\n");
 }
 
 function fmtBoard(data: any): Board {
@@ -142,6 +180,16 @@ function fmtIssue(data: any): Issue {
         comment,
     };
     return { id, key, self, fields };
+}
+
+function fmtIssueWebLink(issue: Issue) {
+    return new URL(`/browse/${issue.key}`, new URL(issue.self).origin);
+}
+
+function fmtCommentWebLink(issue: Issue, comment: Comment) {
+    const url = fmtIssueWebLink(issue);
+    url.searchParams.set("focusedCommentId", comment.id);
+    return url;
 }
 
 export function IssueService(storage: Deno.Kv) {
@@ -304,37 +352,37 @@ export function IssueService(storage: Deno.Kv) {
     async function updateComment(
         issue: Issue,
         comment: Comment,
-        body: string,
+        body_: string,
     ): Promise<void> {
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
-        const url = new URL(
-            `/rest/api/2/issue/${issue.key}/comment/${comment.id}`,
-            baseUrl,
-        );
-        const request = new Request(url, {
-            method: "PUT",
-            headers,
-            body: JSON.stringify({ body }),
-        });
+        const path = `/rest/api/2/issue/${issue.key}/comment/${comment.id}`;
+        const url = new URL(path, baseUrl);
+        url.searchParams.set("notifyUsers", "false");
+        const body = JSON.stringify({ body: body_ });
+        const payload = { method: "PUT", headers, body };
+        const request = new Request(url, payload);
         const response = await fetch(request);
         if (!response.ok) throw response;
         await response.text();
     }
 
-    async function upsertComment(issue: Issue, body: string) {
-        const cached = await myCommentsStore
-            .get(issue.key)
-            .catch(() => null);
+    async function upsertComment(
+        issue: Issue,
+        body: string,
+    ): Promise<{ published: boolean; comment: Comment; link: URL }> {
+        const cached = await myCommentsStore.get(issue.key).catch(() => null);
         if (cached) {
-            const remote = await getComment(issue, cached.id);
-            if (body && remote.body && remote.body !== body) {
-                await updateComment(issue, cached, body);
-                return true;
+            const comment = await getComment(issue, cached.id);
+            const link = fmtCommentWebLink(issue, comment);
+            if (body && comment.body && comment.body !== body) {
+                await updateComment(issue, comment, body);
+                return { published: true, comment: comment, link };
             }
-            return false;
+            return { published: false, comment: comment, link };
         }
-        await postComment(issue, body);
-        return true;
+        const comment = await postComment(issue, body);
+        const link = fmtCommentWebLink(issue, comment);
+        return { published: true, comment, link };
     }
 }
