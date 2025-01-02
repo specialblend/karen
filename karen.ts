@@ -4,23 +4,24 @@ import { Ollama } from "npm:ollama";
 import { Command } from "npm:commander";
 import * as Fmt from "jsr:@std/fmt/colors";
 
-import { AssistantService } from "./src/Assistant.ts";
-import { AuthoringService, Edit } from "./src/Authoring.ts";
 import { ConfigStore, KnownConfigParams, remember } from "./src/Config.ts";
 import { Console } from "./src/Console.ts";
-import { EstimateStore } from "./src/Estimate.ts";
-import { Review, ReviewStore } from "./src/Review.ts";
+import { ReviewService, ReviewStore } from "./src/Review.ts";
 import { SettingsV1 } from "./src/Settings.ts";
 import { Store } from "./src/Store.ts";
 
 import {
   BoardStore,
+  deserializeEdit,
+  diffIssue,
+  Edit,
   EditStore,
   Issue,
   IssueService,
   IssueStore,
   MyCommentStore,
   ProjectStore,
+  serializeIssue,
 } from "./src/Issue.ts";
 
 import {
@@ -29,11 +30,10 @@ import {
   getStorage,
   getStorageDir,
   getStoragePath,
+  hash,
   relativeDate,
   touchStorageDir,
 } from "./src/System.ts";
-
-import { ReportingService, ReportStore } from "./src/Reporting.ts";
 
 const console = Console();
 
@@ -48,8 +48,8 @@ export function ListResource<T>(store: Store<T>) {
         .catch(console.die);
     }
     return await Array
-      .fromAsync(store.list())
-      .then((data) => console.print(data.map(store.summarize), options.format))
+      .fromAsync(store.keys())
+      .then((data) => console.print(data, options.format))
       .catch(console.die);
   };
 }
@@ -209,20 +209,16 @@ export async function main() {
           .catch(() => "none");
         const issues = await Array.fromAsync(IssueStore(storage).keys());
         const projects = await Array.fromAsync(ProjectStore(storage).keys());
-        const boards = await Array.fromAsync(BoardStore(storage).keys());
         const reviews = await Array.fromAsync(ReviewStore(storage).keys());
-        const estimates = await Array.fromAsync(EstimateStore(storage).keys());
         const edits = await Array.fromAsync(EditStore(storage).keys());
         const output = {
           id,
           issues: {
             total: issues.length,
             reviewed: reviews.length,
-            estimated: estimates.length,
             edited: edits.length,
           },
           projects: { total: projects.length },
-          boards: { total: boards.length },
         };
         console.print(output, options.format);
       },
@@ -244,15 +240,6 @@ export async function main() {
 
   list
     .addCommand(
-      new Command("boards")
-        .description("List all stored boards")
-        .option("--details", "Show full board details")
-        .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(BoardStore(storage))),
-    );
-
-  list
-    .addCommand(
       new Command("issues")
         .description("List all stored issues")
         .option("--details", "Show full issue details")
@@ -263,7 +250,7 @@ export async function main() {
   list
     .addCommand(
       new Command("my-comments")
-        .description("List all stored comments")
+        .description("List all stored comments published by KAREN")
         .option("--details", "Show full comment details")
         .option("-o, --format <format>", "json or yaml", "yaml")
         .action(ListResource(MyCommentStore(storage))),
@@ -282,7 +269,6 @@ export async function main() {
     .addCommand(
       new Command("reviews")
         .description("List all stored reviews")
-        .option("--details", "Show full review details")
         .option("--sort", "Sort reviews by score")
         .option("--threshold <score>", "Filter reviews below threshold score")
         .option("-o, --format <format>", "json or yaml", "yaml")
@@ -306,27 +292,8 @@ export async function main() {
             );
           }
 
-          if (options.details) return console.print(reviews, options.format);
-          return console.print(reviews.map(store.summarize), options.format);
+          return console.print(reviews, options.format);
         }),
-    );
-
-  list
-    .addCommand(
-      new Command("estimates")
-        .description("List all stored estimates")
-        .option("--details", "Show full estimate details")
-        .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(EstimateStore(storage))),
-    );
-
-  list
-    .addCommand(
-      new Command("reports")
-        .description("List all stored reports")
-        .option("--details", "Show full report details")
-        .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(ReportStore(storage))),
     );
 
   const get = program
@@ -344,12 +311,11 @@ export async function main() {
           key: string,
           options: { format?: string } = {},
         ) {
-          const authoring = AuthoringService(settings);
           const issue = await IssueStore(storage)
             .get(key)
             .catch(console.expect("Issue not found"));
           if (options.format === "markdown") {
-            return console.log(authoring.serialize(issue));
+            return console.log(serializeIssue(issue));
           }
           return console.print(issue, options.format);
         },
@@ -366,12 +332,11 @@ export async function main() {
           key: string,
           options: { format?: string } = {},
         ) {
-          const authoring = AuthoringService(settings);
           const edit = await EditStore(storage)
             .get(key)
             .catch(console.expect("Edit not found"));
           if (options.format === "markdown") {
-            return console.log(authoring.serialize(edit));
+            return console.log(serializeIssue(edit));
           }
           return console.print(edit, options.format);
         },
@@ -387,35 +352,11 @@ export async function main() {
   );
 
   get.addCommand(
-    new Command("board")
-      .description("Get stored board")
-      .argument("[board-name]", "JIRA board name")
-      .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-      .action(GetResource(BoardStore(storage))),
-  );
-
-  get.addCommand(
     new Command("review")
       .description("Get stored review")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
       .action(GetResource(ReviewStore(storage))),
-  );
-
-  get.addCommand(
-    new Command("estimate")
-      .description("Get stored estimate")
-      .argument("[issue-key]", "JIRA issue key")
-      .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-      .action(GetResource(EstimateStore(storage))),
-  );
-
-  get.addCommand(
-    new Command("report")
-      .description("Get stored report")
-      .argument("[issue-key]", "JIRA issue key")
-      .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-      .action(GetResource(ReportStore(storage))),
   );
 
   const remove = program
@@ -451,39 +392,12 @@ export async function main() {
   );
 
   remove.addCommand(
-    new Command("board")
-      .description("Remove stored board(s)")
-      .argument("[board-name]", "JIRA board name")
-      .option("--all", "Delete all boards")
-      .option("--force", "Delete without confirmation")
-      .action(RemoveResource(BoardStore(storage))),
-  );
-
-  remove.addCommand(
     new Command("review")
       .description("Remove stored review(s)")
       .argument("[issue-key]", "JIRA issue key")
       .option("--all", "Delete all reviews")
       .option("--force", "Delete without confirmation")
       .action(RemoveResource(ReviewStore(storage))),
-  );
-
-  remove.addCommand(
-    new Command("estimate")
-      .description("Remove stored estimate(s)")
-      .argument("[issue-key]", "JIRA issue key")
-      .option("--all", "Delete all estimates")
-      .option("--force", "Delete without confirmation")
-      .action(RemoveResource(EstimateStore(storage))),
-  );
-
-  remove.addCommand(
-    new Command("report")
-      .description("Remove stored report(s)")
-      .argument("[issue-key]", "JIRA issue key")
-      .option("--all", "Delete all reports")
-      .option("--force", "Delete without confirmation")
-      .action(RemoveResource(ReportStore(storage))),
   );
 
   const pull = program
@@ -547,12 +461,11 @@ export async function main() {
     const edits = EditStore(storage);
     const issues = IssueStore(storage);
     const issueService = IssueService(storage);
-    const authoring = AuthoringService(settings);
     const remote = await issueService.pullIssue(key);
     const local = await edits.get(key).catch(() => null);
     if (!local) return console.warn("Up to date");
-    const localChecksum = await authoring.hash(authoring.serialize(local));
-    const remoteChecksum = await authoring.hash(authoring.serialize(remote));
+    const localChecksum = await hash(serializeIssue(local));
+    const remoteChecksum = await hash(serializeIssue(remote));
     if (localChecksum === remoteChecksum) return console.warn("Up to date");
     await issueService.pushIssue(local);
     await issues.put(local.key, local);
@@ -568,45 +481,54 @@ export async function main() {
 
   async function review(
     key: string,
-    options = { ...settings.printer, model: settings.ollama.model },
+    options: {
+      format: "markdown" | "json" | "yaml" | "jira";
+      model?: string;
+      force?: boolean;
+      all?: boolean;
+      publish?: boolean;
+    },
   ) {
     const reviews = ReviewStore(storage);
     const issueStore = IssueStore(storage);
-    const ollama = new Ollama({ ...settings.ollama, model: options.model });
-    const assistant = AssistantService(ollama, storage, settings);
-    await assistant
+    const ollama = new Ollama(settings.ollama);
+    const service = ReviewService(ollama, storage, settings);
+    await service
       .status()
       .catch(console.expect("Failed to connect to Ollama"));
-    if (options.all) return await reviewAll(options);
+    if (options.all) return await reviewAll();
     if (!key) return console.die("issue key required when not using --all");
-
-    const review = await reviews.get(key).catch(
-      console.expect("Issue not found"),
-    );
-
-    if (!options.force && review) return console.print(review);
 
     return await issueStore
       .get(key)
       .catch(console.expect("Issue not found"))
-      .then((issue) => reviewIssue(issue, options));
+      .then(reviewOne)
+      .then((review) => service.format(review, options))
+      .then(console.log);
 
-    async function reviewIssue(issue: Issue, options = settings.printer) {
-      console.log("reviewing", issue.key);
-      return await assistant
-        .review(issue)
-        .then((data) => console.print(data, options.format))
-        .catch(console.error);
+    async function reviewOne(issue: Issue) {
+      console.log("reviewing", issue.key, "...");
+      const review = await service.review(issue, options);
+      if (options.publish) {
+        const { published, link } = await service.publish(review);
+        if (published) {
+          console.info(Fmt.green(`Published ${issue.key}: ${link}`));
+          return review;
+        }
+        console.error(Fmt.yellow(`Already published ${issue.key}: ${link}`));
+        return review;
+      }
+      return review;
     }
 
-    async function reviewAll(options = settings.printer) {
+    async function reviewAll() {
       const keys = await Array
         .fromAsync(reviews.keys())
         .then((keys) => new Set(keys));
       const issues = issueStore.list();
       for await (const issue of issues) {
         if (keys.has(issue.key) && !options.force) continue;
-        await reviewIssue(issue, options);
+        await reviewOne(issue);
       }
       return console.info("done");
     }
@@ -618,108 +540,24 @@ export async function main() {
     .argument("[issue-key]", "JIRA issue key")
     .option("--force", "Force a new review even if cached")
     .option("--all", "Review all locally stored issues")
-    .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
+    .option(
+      "-o, --format <format>",
+      "Output format (json, yaml, markdown)",
+      "markdown",
+    )
     .option("--model <model>", "Ollama model to use", settings.ollama.model)
+    .option("--publish", "Publish the review to JIRA")
     .action(review);
-
-  async function estimate(
-    key: string,
-    options: {
-      reviewed?: boolean;
-      all?: boolean;
-      force?: boolean;
-      model?: string;
-    } = {},
-  ) {
-    const estimateStore = EstimateStore(storage);
-    const issueStore = IssueStore(storage);
-    const reviewStore = ReviewStore(storage);
-    const ollama = new Ollama(settings.ollama);
-    const assistant = AssistantService(ollama, storage, settings);
-    await assistant
-      .status()
-      .catch(console.expect("Failed to connect to Ollama"));
-
-    if (options.reviewed) return await estimateReviewed(options);
-    if (options.all) return await estimateAll(options);
-
-    const estimate = await estimateStore
-      .get(key)
-      .catch(() => null);
-
-    if (!options.force && estimate) return console.print(estimate);
-
-    return await issueStore
-      .get(key)
-      .catch(console.expect("Issue not found"))
-      .then((issue) => estimateIssue(issue, options));
-
-    async function estimateIssue(
-      issue: Issue,
-      options: { model?: string } = {},
-    ) {
-      console.log("estimating", issue.key);
-      return await assistant
-        .estimate(issue, options)
-        .then((estimate) => estimateStore.put(issue.key, estimate))
-        .then(console.print)
-        .catch(console.error);
-    }
-
-    async function estimateReviewed(
-      options: { force?: boolean; model?: string } = {},
-    ) {
-      const estimatedKeys = await Array
-        .fromAsync(estimateStore.keys())
-        .then((keys) => new Set(keys));
-
-      for await (const key of reviewStore.keys()) {
-        if (!options.force && estimatedKeys.has(key)) continue;
-        await issueStore
-          .get(key)
-          .then((issue) => estimateIssue(issue, options))
-          .catch(console.expect("Issue not found"));
-      }
-
-      return console.info("done");
-    }
-
-    async function estimateAll(
-      options: { force?: boolean; model?: string } = {},
-    ) {
-      const keys = await Array
-        .fromAsync(estimateStore.keys())
-        .then((keys) => new Set(keys));
-      const issues = issueStore.list();
-      for await (const issue of issues) {
-        if (keys.has(issue.key) && !options.force) continue;
-        await estimateIssue(issue, options);
-      }
-      return console.info("done");
-    }
-  }
-
-  program
-    .command("estimate")
-    .description("Estimate story points for an issue using AI")
-    .argument("[issue-key]", "JIRA issue key")
-    .option("--force", "Force a new estimate even if cached")
-    .option("--all", "Estimate all locally stored issues")
-    .option("--reviewed", "Estimate only previously reviewed issues")
-    .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-    .option("--model <model>", "Ollama model to use")
-    .action(estimate);
 
   async function edit(key: string) {
     const editStore = EditStore(storage);
     const issueStore = IssueStore(storage);
-    const authoring = AuthoringService(settings);
     const wip = await editStore.get(key).catch(() => null);
     const issue = wip || await issueStore
       .get(key)
       .catch(console.expect("Issue not found"));
-    const content = authoring.serialize(issue);
-    const checksum = await authoring.hash(content);
+    const content = serializeIssue(issue);
+    const checksum = await hash(content);
     const tempFile = await Deno.makeTempFile({ suffix: ".md" });
     await Deno.writeTextFile(tempFile, content);
     const editor = Deno.env.get("EDITOR") || "nano";
@@ -740,13 +578,13 @@ export async function main() {
       console.log(Fmt.yellow(`Editing ${key}...`));
       prompt(msg);
       const content1 = await Deno.readTextFile(tempFile);
-      const checksum1 = await authoring.hash(content1);
+      const checksum1 = await hash(content1);
       if (checksum1 === checksum) {
         console.warn(Fmt.yellow("No changes."));
         return await Deno.remove(tempFile);
       }
       try {
-        edit = await authoring.deserialize(content1);
+        edit = await deserializeEdit(content1);
         msg = null;
       } catch (err) {
         const message = (err as Error).message;
@@ -773,13 +611,12 @@ export async function main() {
   async function diff(issueKey: string) {
     const issueStore = IssueStore(storage);
     const editStore = EditStore(storage);
-    const authoring = AuthoringService(settings);
     const original = await issueStore.get(issueKey).catch(
       console.expect("Issue not found"),
     );
     const edited = await editStore.get(issueKey).catch(() => null);
     if (!edited) return console.warn("No local changes found");
-    console.log(authoring.diff(original, edited));
+    console.log(diffIssue(original, edited));
   }
 
   program
@@ -833,86 +670,6 @@ export async function main() {
     .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
     .option("--created", "Filter by created date")
     .action(prune);
-
-  async function report(
-    key: string,
-    options: {
-      publish?: boolean;
-      force?: boolean;
-      all?: boolean;
-      format?: string;
-      model?: string;
-    } = {},
-  ) {
-    const issueStore = IssueStore(storage);
-    const reportStore = ReportStore(storage);
-    const reporting = ReportingService(storage, settings);
-
-    if (options.all) return await reportAll(options);
-    if (!key) return console.die("issue key required when not using --all");
-
-    const issue = await issueStore
-      .get(key)
-      .catch(console.expect("Issue not found"));
-
-    return await reportIssue(issue, options);
-
-    async function reportAll(
-      options: {
-        publish?: boolean;
-        force?: boolean;
-        format?: string;
-        model?: string;
-      } = {},
-    ) {
-      const issues = issueStore.list();
-      for await (const issue of issues) await reportIssue(issue, options);
-      return console.info("done");
-    }
-
-    async function reportIssue(
-      issue: Issue,
-      options: {
-        publish?: boolean;
-        format?: string;
-        force?: boolean;
-        model?: string;
-        details?: boolean;
-      } = {},
-    ) {
-      console.log("Collecting report for", issue.key);
-      const report = await reporting.collect(issue, options);
-      if (options.publish) {
-        const published = await reporting.publish(report);
-        if (published) {
-          console.info(Fmt.green(`Published ${issue.key}`));
-        } else {
-          console.info(Fmt.yellow(`Already published ${issue.key}`));
-        }
-      }
-      if (options.format === "markdown") {
-        const markdown = await reporting.format(report, { format: "markdown" });
-        return console.log(markdown);
-      }
-      if (options.details) return console.print(report, options.format);
-      return console.print(reportStore.summarize(report), options.format);
-    }
-  }
-
-  program
-    .command("report")
-    .description("Generate a report for an issue using AI review and estimate")
-    .argument("[issue-key]", "JIRA issue key")
-    .option("--publish", "Publish report as a comment on the issue")
-    .option("--force", "Force a new review and estimate")
-    .option("--all", "Report on all locally stored issues")
-    .option(
-      "-o, --format <format>",
-      "Output format (json, yaml, markdown)",
-      "yaml",
-    )
-    .option("--model <model>", "Ollama model to use")
-    .action(report);
 
   await program.parseAsync();
 }

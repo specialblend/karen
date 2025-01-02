@@ -93,3 +93,15 @@ export function relativeDate(date: Date, now = new Date()): string {
     if (Math.abs(minutes) > 1) return formatter.format(minutes, "minutes");
     return formatter.format(seconds, "seconds");
 }
+
+export async function hash(text: string) {
+    const data = new TextEncoder().encode(text);
+    return await crypto
+        .subtle
+        .digest("SHA-512", data)
+        .then((hash) => new Uint8Array(hash))
+        .then((hash) => Array.from(hash))
+        .then((hash) =>
+            hash.map((b) => b.toString(16).padStart(2, "0")).join("")
+        );
+}
