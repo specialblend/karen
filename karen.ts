@@ -845,6 +845,7 @@ export async function main() {
     } = {},
   ) {
     const issueStore = IssueStore(storage);
+    const reportStore = ReportStore(storage);
     const reporting = ReportingService(storage, settings);
 
     if (options.all) return await reportAll(options);
@@ -853,42 +854,8 @@ export async function main() {
     const issue = await issueStore
       .get(key)
       .catch(console.expect("Issue not found"));
-    const report = await reporting.collect(issue, options);
-    if (["markdown", "jira"].includes(options.format ?? "markdown")) {
-      const markdown = await reporting.format(report, {
-        format: options.format ?? "markdown",
-      });
-      console.log(markdown);
-    } else {
-      console.print(report, options.format);
-    }
 
-    if (options.publish) {
-      await reporting.publish(report);
-      console.info(Fmt.green("Report published"));
-    }
-
-    async function reportIssue(
-      issue: Issue,
-      options: {
-        publish?: boolean;
-        format?: string;
-        force?: boolean;
-        model?: string;
-      } = {},
-    ) {
-      console.log("Collecting report for", issue.key);
-      const report = await reporting.collect(issue, options);
-      if (options.publish) {
-        await reporting.publish(report);
-        return console.info(Fmt.green(`Published report for ${issue.key}`));
-      }
-      if (options.format === "markdown") {
-        const markdown = await reporting.format(report, { format: "markdown" });
-        return console.log(markdown);
-      }
-      return console.print(report, options.format);
-    }
+    return await reportIssue(issue, options);
 
     async function reportAll(
       options: {
@@ -901,6 +868,34 @@ export async function main() {
       const issues = issueStore.list();
       for await (const issue of issues) await reportIssue(issue, options);
       return console.info("done");
+    }
+
+    async function reportIssue(
+      issue: Issue,
+      options: {
+        publish?: boolean;
+        format?: string;
+        force?: boolean;
+        model?: string;
+        details?: boolean;
+      } = {},
+    ) {
+      console.log("Collecting report for", issue.key);
+      const report = await reporting.collect(issue, options);
+      if (options.publish) {
+        const published = await reporting.publish(report);
+        if (published) {
+          console.info(Fmt.green(`Published ${issue.key}`));
+        } else {
+          console.info(Fmt.yellow(`Already published ${issue.key}`));
+        }
+      }
+      if (options.format === "markdown") {
+        const markdown = await reporting.format(report, { format: "markdown" });
+        return console.log(markdown);
+      }
+      if (options.details) return console.print(report, options.format);
+      return console.print(reportStore.summarize(report), options.format);
     }
   }
 
