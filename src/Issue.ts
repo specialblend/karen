@@ -312,6 +312,7 @@ export function IssueService(storage: Deno.Kv) {
             `/rest/api/2/issue/${issue.key}/comment/${comment.id}`,
             baseUrl,
         );
+        url.searchParams.set("notifyUsers", "false");
         const request = new Request(url, {
             method: "PUT",
             headers,
