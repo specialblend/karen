@@ -16,6 +16,7 @@ import { Store } from "./src/Store.ts";
 import {
   BoardStore,
   EditStore,
+  fmtCommentWebLink,
   Issue,
   IssueService,
   IssueStore,
@@ -33,7 +34,11 @@ import {
   touchStorageDir,
 } from "./src/System.ts";
 
-import { IssueReportStore, ReportingService } from "./src/Reporting.ts";
+import {
+  IssueReportingService,
+  IssueReportStore,
+  ProjectReportingService,
+} from "./src/Reporting.ts";
 
 const console = Console();
 
@@ -518,6 +523,10 @@ export async function main() {
               .catch(console.expect("Board not found"));
             const issues = await issueService
               .pullIssues(board)
+              .catch((err) => {
+                console.error(err);
+                throw err;
+              })
               .catch(console.expect("Failed to pull issues"));
             total += issues.length;
           }
@@ -834,7 +843,59 @@ export async function main() {
     .option("--created", "Filter by created date")
     .action(prune);
 
-  async function report(
+  const report = program
+    .command("report")
+    .description("Generate reports using AI review and estimate");
+
+  report.addCommand(
+    new Command("issue")
+      .description("Generate a report for a specific issue")
+      .argument("[issue-key]", "JIRA issue key")
+      .option("--publish", "Publish report as a comment on the issue")
+      .option("--force", "Force a new review and estimate")
+      .option("--all", "Report on all locally stored issues")
+      .option(
+        "-o, --format <format>",
+        "Output format (json, yaml, markdown)",
+        "yaml",
+      )
+      .option("--model <model>", "Ollama model to use")
+      .action(reportIssue),
+  );
+
+  report.addCommand(
+    new Command("project")
+      .description("Generate reports for all issues in a project")
+      .argument("<project-key>", "JIRA project key")
+      .option("--publish", "Publish reports as comments on the issues")
+      .option(
+        "-o, --format <format>",
+        "Output format (json, yaml, markdown)",
+        "yaml",
+      )
+      .option("--model <model>", "Ollama model to use")
+      .action(reportProject),
+  );
+
+  async function reportProject(
+    projectKey: string,
+    options: {
+      publish?: boolean;
+      format?: string;
+      model?: string;
+    } = {},
+  ) {
+    const projectStore = ProjectStore(storage);
+    const project = await projectStore
+      .get(projectKey)
+      .catch(console.expect("Project not found"));
+    const service = ProjectReportingService(storage);
+    const report = await service.collect(project);
+    const markdown = await service.format(report, { format: "markdown" });
+    return console.info(markdown);
+  }
+
+  async function reportIssue(
     key: string,
     options: {
       publish?: boolean;
@@ -846,7 +907,7 @@ export async function main() {
   ) {
     const issueStore = IssueStore(storage);
     const reportStore = IssueReportStore(storage);
-    const reporting = ReportingService(storage, settings);
+    const reporting = IssueReportingService(storage, settings);
 
     if (options.all) return await reportAll(options);
     if (!key) return console.die("issue key required when not using --all");
@@ -855,7 +916,7 @@ export async function main() {
       .get(key)
       .catch(console.expect("Issue not found"));
 
-    return await reportIssue(issue, options);
+    return await reportOne(issue, options);
 
     async function reportAll(
       options: {
@@ -866,11 +927,11 @@ export async function main() {
       } = {},
     ) {
       const issues = issueStore.list();
-      for await (const issue of issues) await reportIssue(issue, options);
+      for await (const issue of issues) await reportOne(issue, options);
       return console.info("done");
     }
 
-    async function reportIssue(
+    async function reportOne(
       issue: Issue,
       options: {
         publish?: boolean;
@@ -885,10 +946,10 @@ export async function main() {
       if (options.publish) {
         const published = await reporting.publish(report);
         if (published) {
-          console.info(Fmt.green(`Published ${issue.key}`));
-        } else {
-          console.info(Fmt.yellow(`Already published ${issue.key}`));
+          const webLink = fmtCommentWebLink(issue, published);
+          return console.info(Fmt.green(`Published ${issue.key}: ${webLink}`));
         }
+        return console.info(Fmt.yellow(`Already published ${issue.key}`));
       }
       if (options.format === "markdown") {
         const markdown = await reporting.format(report, { format: "markdown" });
@@ -898,21 +959,6 @@ export async function main() {
       return console.print(reportStore.summarize(report), options.format);
     }
   }
-
-  program
-    .command("report")
-    .description("Generate a report for an issue using AI review and estimate")
-    .argument("[issue-key]", "JIRA issue key")
-    .option("--publish", "Publish report as a comment on the issue")
-    .option("--force", "Force a new review and estimate")
-    .option("--all", "Report on all locally stored issues")
-    .option(
-      "-o, --format <format>",
-      "Output format (json, yaml, markdown)",
-      "yaml",
-    )
-    .option("--model <model>", "Ollama model to use")
-    .action(report);
 
   await program.parseAsync();
 }

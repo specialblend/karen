@@ -12,6 +12,7 @@
     "npm:diff@*": "7.0.0",
     "npm:jira-client@*": "8.2.2",
     "npm:jira2md@*": "3.0.1",
+    "npm:jsonschema@*": "1.4.1",
     "npm:nanoid@*": "5.0.9",
     "npm:ollama@*": "0.5.11"
   },
@@ -250,6 +251,9 @@
     },
     "json-stringify-safe@5.0.1": {
       "integrity": "sha512-ZClg6AaYvamvYEE82d3Iyd3vSSIjQ+odgjaTzRuO3s7toCdFKczob2i0zCh7JE8kWn17yvAWhUVxvqGwUalsRA=="
+    },
+    "jsonschema@1.4.1": {
+      "integrity": "sha512-S6cATIPVv1z0IlxdN+zUk5EPjkGCdnhN4wVSBlvoUO1tOLJootbo9CquNJmbIh4yikWHiUedhRYrNPn1arpEmQ=="
     },
     "jsprim@2.0.2": {
       "integrity": "sha512-gqXddjPqQ6G40VdnI6T6yObEC+pDNvyP95wdQhkWkg7crHH3km5qP1FsOXEkzEQwnz6gz5qGTn1c2Y52wP3OyQ==",
