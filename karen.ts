@@ -283,8 +283,38 @@ export async function main() {
       new Command("reviews")
         .description("List all stored reviews")
         .option("--details", "Show full review details")
+        .option("--sort", "Sort reviews by score")
+        .option("--threshold <score>", "Filter reviews below threshold score")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(ReviewStore(storage))),
+        .action(async function listReviews(options: {
+          details?: boolean;
+          format?: string;
+          sort?: boolean;
+          threshold?: string;
+        } = {}) {
+          const store = ReviewStore(storage);
+          let reviews = await Array.fromAsync(store.list());
+
+          if (options.sort) {
+            reviews = reviews.sort((a: any, b: any) => b.score - a.score);
+          }
+
+          if (options.threshold) {
+            const threshold = parseFloat(options.threshold);
+            reviews = reviews.filter((review: any) =>
+              review.score <= threshold
+            );
+          }
+
+          if (options.details) {
+            return console.print(reviews, options.format);
+          }
+
+          return console.print(
+            reviews.map((review: any) => review.issue.key),
+            options.format,
+          );
+        }),
     );
 
   list

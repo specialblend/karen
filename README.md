@@ -80,6 +80,13 @@ You can also publish all reports:
 karen report --all --publish
 ```
 
+#### Show a list of reviewed issues sorted by score below a threshold:
+
+```shell
+# Show all issues sorted by score below 50%
+karen list reviews --sort --threshold 0.5
+```
+
 ### Command Line Reference
 
 #### Configuration
