@@ -1,5 +1,3 @@
-import { Json } from "./System.ts";
-
 export interface Store<T> {
     put(key: string, value: T): Promise<T>;
     get(key: string): Promise<T>;
@@ -7,15 +5,13 @@ export interface Store<T> {
     keys(): AsyncGenerator<string>;
     remove(key: string): Promise<void>;
     removeAll(): Promise<void>;
-    summarize: (value: T) => Json;
 }
 
 export function Store<T>(
     namespace: string[],
     storage: Deno.Kv,
-    summarize: (value: T) => Json,
 ): Store<T> {
-    return { put, get, list, keys, remove, removeAll, summarize };
+    return { put, get, list, keys, remove, removeAll };
 
     async function put(key: string, value: T) {
         await storage.set([...namespace, key], value);
