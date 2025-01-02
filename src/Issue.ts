@@ -267,7 +267,25 @@ export function IssueService(storage: Deno.Kv) {
         await response.text();
     }
 
+    async function getComment(issue: Issue, id: string): Promise<Comment> {
+        const baseUrl = await getBaseUrl();
+        const headers = await getHeaders();
+        const url = new URL(
+            `/rest/api/2/issue/${issue.key}/comment/${id}`,
+            baseUrl,
+        );
+        const request = new Request(url, {
+            method: "GET",
+            headers,
+        });
+        const response = await fetch(request);
+        if (!response.ok) throw response;
+        const comment = await response.json().then(fmtComment);
+        return comment;
+    }
+
     async function postComment(issue: Issue, body: string): Promise<Comment> {
+        throw new Error("Not implemented");
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
         const url = new URL(`/rest/api/2/issue/${issue.key}/comment`, baseUrl);
@@ -289,6 +307,7 @@ export function IssueService(storage: Deno.Kv) {
         comment: Comment,
         body: string,
     ): Promise<void> {
+        throw new Error("Not implemented");
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
         const url = new URL(
@@ -309,7 +328,15 @@ export function IssueService(storage: Deno.Kv) {
         const cached = await myCommentsStore
             .get(issue.key)
             .catch(() => null);
-        if (cached) return await updateComment(issue, cached, body);
-        return await postComment(issue, body);
+        if (cached) {
+            const remote = await getComment(issue, cached.id);
+            if (body && remote.body && remote.body !== body) {
+                await updateComment(issue, cached, body);
+                return true;
+            }
+            return false;
+        }
+        await postComment(issue, body);
+        return true;
     }
 }

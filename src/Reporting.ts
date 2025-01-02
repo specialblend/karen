@@ -71,7 +71,7 @@ export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
 
     async function publish(report: Report) {
         const text = await format(report, { format: "jira" });
-        await issueService.upsertComment(report.issue, text);
+        return await issueService.upsertComment(report.issue, text);
     }
 
     async function format(report: Report, options: { format: string }) {
