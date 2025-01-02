@@ -285,7 +285,6 @@ export function IssueService(storage: Deno.Kv) {
     }
 
     async function postComment(issue: Issue, body: string): Promise<Comment> {
-        throw new Error("Not implemented");
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
         const url = new URL(`/rest/api/2/issue/${issue.key}/comment`, baseUrl);
@@ -307,7 +306,6 @@ export function IssueService(storage: Deno.Kv) {
         comment: Comment,
         body: string,
     ): Promise<void> {
-        throw new Error("Not implemented");
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
         const url = new URL(
