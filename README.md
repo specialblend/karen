@@ -57,28 +57,31 @@ If your tickets look like EXAMPLE-1234, you can pull them like this:
 karen pull project EXAMPLE
 ```
 
-#### Review, estimate, and generate a report for an issue using AI:
+#### Review and estimate an issue using AI:
 
 ```shell
-karen report EXAMPLE-1234
+karen review EXAMPLE-1234
 ```
 
-You can also generate a report for all issues
+You can also review all issues:
 
 ```shell
-karen report --all
+karen review --all
 ```
 
-#### Publish your report to JIRA as a comment:
+#### Publish your review as a comment to the issue:
 
 ```shell
-karen report EXAMPLE-1234 --publish
+karen review EXAMPLE-1234 --publish
 ```
 
-You can also publish all reports:
+Note: `review --publish` is idempotent and can be safely run multiple times
+without adding multiple comments to the same issue.
+
+You can also review and publish all issues at once:
 
 ```shell
-karen report --all --publish
+karen review --all --publish
 ```
 
 #### Show a list of reviewed issues sorted by score below a threshold:
@@ -117,28 +120,14 @@ karen list reviews --sort --threshold 0.5
   - `--all` Review all stored issues
   - `--force` Force new review even if cached
   - `--model <model>` Specify Ollama model
-- `karen estimate [issue-key]` - Estimate story points using AI
-  - `--all` Estimate all stored issues
-  - `--reviewed` Estimate only previously reviewed issues
-  - `--force` Force new estimate even if cached
-  - `--model <model>` Specify Ollama model
-- `karen report [issue-key]` - Generate AI review and estimate report
-  - `--all` Report on all stored issues
-  - `--publish` Post report as JIRA comment
-  - `--force` Force new review and estimate
-  - `--model <model>` Specify Ollama model
 
 #### Data Management
 
 - `karen list|ls` - List stored data
   - `projects` List stored projects
-  - `boards` List stored boards
   - `issues` List stored issues
-  - `comments` List stored comments
   - `edits` List stored edits
   - `reviews` List stored reviews
-  - `estimates` List stored estimates
-  - `reports` List stored reports
   - Options:
     - `--details` Show full details
     - `--format <format>` Output as json or yaml
@@ -147,10 +136,7 @@ karen list reviews --sort --threshold 0.5
   - `issue <issue-key>` Get stored issue
   - `edit <issue-key>` Get stored edit
   - `project <project-key>` Get stored project
-  - `board <board-name>` Get stored board
   - `review <issue-key>` Get stored review
-  - `estimate <issue-key>` Get stored estimate
-  - `report <issue-key>` Get stored report
 
 - `karen remove|rm` - Remove stored data
   - Same subcommands as `get`, with options:
