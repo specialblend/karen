@@ -8,7 +8,7 @@ import { AssistantService } from "./Assistant.ts";
 import { Ollama } from "npm:ollama";
 import { SettingsV1 } from "./Settings.ts";
 
-export type Report = {
+export type IssueReport = {
     issue: Issue;
     review: Review;
     estimate: NormalizedEstimate;
@@ -16,15 +16,19 @@ export type Report = {
 
 export type NormalizedEstimate = Estimate & { normalizedConfidence: number };
 
-export function ReportStore(storage: Deno.Kv) {
-    return Store<Report>(["reports"], storage, function summarize(report) {
-        const { issue, review, estimate } = report;
-        return {
-            issue: IssueStore(storage).summarize(issue),
-            review: ReviewStore(storage).summarize(review),
-            estimate: EstimateStore(storage).summarize(estimate),
-        };
-    });
+export function IssueReportStore(storage: Deno.Kv) {
+    return Store<IssueReport>(
+        ["issue-reports"],
+        storage,
+        function summarize(report) {
+            const { issue, review, estimate } = report;
+            return {
+                issue: IssueStore(storage).summarize(issue),
+                review: ReviewStore(storage).summarize(review),
+                estimate: EstimateStore(storage).summarize(estimate),
+            };
+        },
+    );
 }
 
 export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
@@ -39,7 +43,7 @@ export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
     async function collect(
         issue_: Issue,
         options: { force?: boolean; model?: string } = {},
-    ): Promise<Report> {
+    ): Promise<IssueReport> {
         try {
             const issue = await issueService.pullIssue(issue_.key);
             const review = options.force
@@ -60,7 +64,7 @@ export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
                 estimate: normalizeEstimate(estimate, review),
             };
 
-            return await ReportStore(storage).put(issue.key, report);
+            return await IssueReportStore(storage).put(issue.key, report);
         } catch (error) {
             console.error(error);
             console.log({ issue_ });
@@ -68,12 +72,12 @@ export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
         }
     }
 
-    async function publish(report: Report) {
+    async function publish(report: IssueReport) {
         const text = await format(report, { format: "jira" });
         return await issueService.upsertComment(report.issue, text);
     }
 
-    async function format(report: Report, options: { format: string }) {
+    async function format(report: IssueReport, options: { format: string }) {
         const markdown = fmtReportMarkdown(report);
         if (options.format === "markdown") return markdown;
         return await Jira2Md.to_jira(markdown);
@@ -87,7 +91,7 @@ export function ReportingService(storage: Deno.Kv, settings: SettingsV1) {
     }
 }
 
-function fmtReportMarkdown(report: Report) {
+function fmtReportMarkdown(report: IssueReport) {
     const { review, estimate } = report;
     const score = `${Math.round(review.score * 100)}%`;
     const checklist = review.checklist.map(

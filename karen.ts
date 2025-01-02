@@ -9,7 +9,7 @@ import { AuthoringService, Edit } from "./src/Authoring.ts";
 import { ConfigStore, KnownConfigParams, remember } from "./src/Config.ts";
 import { Console } from "./src/Console.ts";
 import { EstimateStore } from "./src/Estimate.ts";
-import { Review, ReviewStore } from "./src/Review.ts";
+import { ReviewStore } from "./src/Review.ts";
 import { SettingsV1 } from "./src/Settings.ts";
 import { Store } from "./src/Store.ts";
 
@@ -33,7 +33,7 @@ import {
   touchStorageDir,
 } from "./src/System.ts";
 
-import { ReportingService, ReportStore } from "./src/Reporting.ts";
+import { IssueReportStore, ReportingService } from "./src/Reporting.ts";
 
 const console = Console();
 
@@ -326,7 +326,7 @@ export async function main() {
         .description("List all stored reports")
         .option("--details", "Show full report details")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(ReportStore(storage))),
+        .action(ListResource(IssueReportStore(storage))),
     );
 
   const get = program
@@ -415,7 +415,7 @@ export async function main() {
       .description("Get stored report")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-      .action(GetResource(ReportStore(storage))),
+      .action(GetResource(IssueReportStore(storage))),
   );
 
   const remove = program
@@ -483,7 +483,7 @@ export async function main() {
       .argument("[issue-key]", "JIRA issue key")
       .option("--all", "Delete all reports")
       .option("--force", "Delete without confirmation")
-      .action(RemoveResource(ReportStore(storage))),
+      .action(RemoveResource(IssueReportStore(storage))),
   );
 
   const pull = program
@@ -845,7 +845,7 @@ export async function main() {
     } = {},
   ) {
     const issueStore = IssueStore(storage);
-    const reportStore = ReportStore(storage);
+    const reportStore = IssueReportStore(storage);
     const reporting = ReportingService(storage, settings);
 
     if (options.all) return await reportAll(options);
