@@ -1,5 +1,4 @@
 import * as Yaml from "jsr:@std/yaml";
-import * as Fmt from "jsr:@std/fmt/colors";
 
 import { ConfigParam } from "./Config.ts";
 
@@ -8,8 +7,10 @@ export function Console() {
 }
 
 function print(obj: any, format: string = "yaml"): void {
-    if (format === "json") return console.log(JSON.stringify(obj, null, 2));
-    return console.log(Yaml.stringify(obj));
+    const json = JSON.stringify(obj);
+    if (format === "json") return console.log(json);
+    const data = JSON.parse(json);
+    return console.log(Yaml.stringify(data));
 }
 
 function mask(param: ConfigParam, value: string) {
