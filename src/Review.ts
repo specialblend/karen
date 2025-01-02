@@ -22,5 +22,12 @@ export type ChecklistEntry = {
 };
 
 export function ReviewStore(storage: Deno.Kv): Store<Review> {
-    return Store<Review>(["reviews"], storage);
+    return Store<Review>(
+        ["reviews"],
+        storage,
+        function summarize(review: Review) {
+            const { issueKey, score, issue: { fields: { summary } } } = review;
+            return { issueKey, score, issue: { fields: { summary } } };
+        },
+    );
 }

@@ -9,7 +9,7 @@ import { AuthoringService, Edit } from "./src/Authoring.ts";
 import { ConfigStore, KnownConfigParams, remember } from "./src/Config.ts";
 import { Console } from "./src/Console.ts";
 import { EstimateStore } from "./src/Estimate.ts";
-import { ReviewStore } from "./src/Review.ts";
+import { Review, ReviewStore } from "./src/Review.ts";
 import { SettingsV1 } from "./src/Settings.ts";
 import { Store } from "./src/Store.ts";
 
@@ -48,8 +48,8 @@ export function ListResource<T>(store: Store<T>) {
         .catch(console.die);
     }
     return await Array
-      .fromAsync(store.keys())
-      .then((data) => console.print(data, options.format))
+      .fromAsync(store.list())
+      .then((data) => console.print(data.map(store.summarize), options.format))
       .catch(console.die);
   };
 }
@@ -283,8 +283,32 @@ export async function main() {
       new Command("reviews")
         .description("List all stored reviews")
         .option("--details", "Show full review details")
+        .option("--sort", "Sort reviews by score")
+        .option("--threshold <score>", "Filter reviews below threshold score")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(ReviewStore(storage))),
+        .action(async function listReviews(options: {
+          details?: boolean;
+          format?: string;
+          sort?: boolean;
+          threshold?: string;
+        } = {}) {
+          const store = ReviewStore(storage);
+          let reviews = await Array.fromAsync(store.list());
+
+          if (options.sort) {
+            reviews = reviews.sort((a: any, b: any) => a.score - b.score);
+          }
+
+          if (options.threshold) {
+            const threshold = parseFloat(options.threshold);
+            reviews = reviews.filter((review: any) =>
+              review.score <= threshold
+            );
+          }
+
+          if (options.details) return console.print(reviews, options.format);
+          return console.print(reviews.map(store.summarize), options.format);
+        }),
     );
 
   list

@@ -63,23 +63,43 @@ export type IssueMeta = {
 };
 
 export function ProjectStore(storage: Deno.Kv): Store<Project> {
-    return Store<Project>(["projects"], storage);
+    function summarize(project: Project) {
+        const { key, name } = project;
+        return { key, name };
+    }
+    return Store<Project>(["projects"], storage, summarize);
 }
 
 export function BoardStore(storage: Deno.Kv): Store<Board> {
-    return Store<Board>(["boards"], storage);
+    function summarize(board: Board) {
+        const { name, location: { projectKey = null } = {} } = board;
+        return { name, projectKey };
+    }
+    return Store<Board>(["boards"], storage, summarize);
 }
 
 export function IssueStore(storage: Deno.Kv): Store<Issue> {
-    return Store<Issue>(["issues"], storage);
+    function summarize(issue: Issue) {
+        const { key, fields: { summary } } = issue;
+        return { key, fields: { summary } };
+    }
+    return Store<Issue>(["issues"], storage, summarize);
 }
 
 export function MyCommentStore(storage: Deno.Kv): Store<Comment> {
-    return Store<Comment>(["my-comments"], storage);
+    function summarize(comment: Comment) {
+        const { id, body } = comment;
+        return { id, body };
+    }
+    return Store<Comment>(["my-comments"], storage, summarize);
 }
 
 export function EditStore(storage: Deno.Kv): Store<Issue> {
-    return Store<Issue>(["issues-edit"], storage);
+    function summarize(issue: Issue) {
+        const { key, fields: { summary } } = issue;
+        return { key, fields: { summary } };
+    }
+    return Store<Issue>(["issues-edit"], storage, summarize);
 }
 
 function fmtBoard(data: any): Board {
@@ -205,9 +225,7 @@ export function IssueService(storage: Deno.Kv) {
         const data = await response.json();
         assert(Array.isArray(data.values), "Invalid response for JIRA boards");
         const boards = data.values.map(fmtBoard);
-        for (const board of boards) {
-            await boardStore.put(board.name, board);
-        }
+        for (const board of boards) await boardStore.put(board.name, board);
         return boards;
     }
 
