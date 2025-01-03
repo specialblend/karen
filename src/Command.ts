@@ -618,7 +618,7 @@ export function ListReviewsCommand(
     storage: Deno.Kv,
     settings: SettingsV1,
 ): Command {
-    const issueService = IssueService(storage);
+    const issueStore = IssueStore(storage);
     const ollama = new Ollama(settings.ollama);
     const reviewService = ReviewService(ollama, storage, settings);
 
@@ -647,9 +647,7 @@ export function ListReviewsCommand(
     async function keepOutdated(reviews: Review[]): Promise<Review[]> {
         const outdated = [];
         for await (const review of reviews) {
-            const issue = await issueService
-                .pullIssue(review.key)
-                .catch(() => null);
+            const issue = await issueStore.get(review.key).catch(() => null);
             if (issue) {
                 const diff = await reviewService.diff(issue);
                 if (diff.outdated) outdated.push(review);
