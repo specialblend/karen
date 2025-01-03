@@ -2,6 +2,21 @@ import * as Fmt from "jsr:@std/fmt/colors";
 import { Ollama } from "npm:ollama";
 import { Command } from "npm:commander";
 
+import { ConfigStore, KnownConfigParams, remember } from "./Config.ts";
+import { Console } from "./Console.ts";
+import { DefaultPrinter, Printer, PrinterOptions } from "./Printer.ts";
+import { Review, ReviewPrinter, ReviewService, ReviewStore } from "./Review.ts";
+import { SettingsV1 } from "./Settings.ts";
+import { Store } from "./Store.ts";
+
+import {
+    getSettingsPath,
+    getStorageDir,
+    getStoragePath,
+    hash,
+    relativeDate,
+} from "./System.ts";
+
 import {
     BoardStore,
     deserializeEdit,
@@ -16,19 +31,6 @@ import {
     ProjectStore,
     serializeIssue,
 } from "./Issue.ts";
-import { Review, ReviewPrinter, ReviewService, ReviewStore } from "./Review.ts";
-import { SettingsV1 } from "./Settings.ts";
-import {
-    getSettingsPath,
-    getStorageDir,
-    getStoragePath,
-    hash,
-    relativeDate,
-} from "./System.ts";
-import { Console } from "./Console.ts";
-import { ConfigStore, KnownConfigParams, remember } from "./Config.ts";
-import { DefaultPrinter, Printer, PrinterOptions } from "./Printer.ts";
-import { Store } from "./Store.ts";
 
 const console = Console();
 
