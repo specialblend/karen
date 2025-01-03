@@ -305,6 +305,7 @@ export async function main() {
     new Command("issue")
       .description("Get stored issue")
       .argument("[issue-key]", "JIRA issue key")
+      .option("--details", "Show full issue details")
       .option("-o, --format <format>", "json or yaml", "yaml")
       .action(GetResource(IssueStore(storage), IssuePrinter)),
   );
@@ -313,6 +314,7 @@ export async function main() {
     new Command("edit")
       .description("Get stored edit")
       .argument("[issue-key]", "JIRA issue key")
+      .option("--details", "Show full edit details")
       .option("-o, --format <format>", "json, yaml, or markdown", "yaml")
       .action(GetResource(EditStore(storage), IssuePrinter)),
   );
@@ -321,6 +323,7 @@ export async function main() {
     new Command("project")
       .description("Get stored project")
       .argument("[project-key]", "JIRA project key")
+      .option("--details", "Show full project details")
       .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
       .action(GetResource(ProjectStore(storage))),
   );
@@ -330,6 +333,7 @@ export async function main() {
       .description("Get stored review")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
+      .option("--details", "Show full review details")
       .action(GetResource(ReviewStore(storage), ReviewPrinter)),
   );
 
