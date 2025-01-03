@@ -274,24 +274,47 @@ export async function main() {
         .description("List all stored reviews sorted by score (lowest first)")
         .option("--threshold <score>", "Filter reviews below threshold score")
         .option("--details", "Show full review details")
+        .option("--outdated", "Show only outdated reviews")
+        .option("--diff", "Show diffs when listing outdated reviews")
         .option("-o, --format <format>", "json or yaml", "yaml")
         .action(
           async function listReviews(options: {
             format: string;
             details?: boolean;
             threshold?: string;
+            outdated?: boolean;
+            diff?: boolean;
           } = { format: "markdown" }) {
+            const issueStore = IssueStore(storage);
             const store = ReviewStore(storage);
             const printer = ReviewPrinter(options);
+            const ollama = new Ollama(settings.ollama);
+            const service = ReviewService(ollama, storage, settings);
             const threshold = options.threshold
               ? parseFloat(options.threshold)
               : 1;
             const reviews = await Array
               .fromAsync(store.list())
               .then((reviews) => reviews.sort((a, b) => a.score - b.score))
-              .then((data) => data.filter(({ score }) => score <= threshold))
-              .then(printer.list);
-            return console.log(reviews);
+              .then((data) => data.filter(({ score }) => score <= threshold));
+            if (options.outdated) {
+              const outdated = [];
+              for await (const issue of issueStore.list()) {
+                const review = await store.get(issue.key).catch(() => null);
+                if (review) {
+                  const diff = await service.diff(issue);
+                  if (diff.isOutdated) {
+                    if (options.diff) console.log(diff.patch);
+                    outdated.push(review);
+                  }
+                }
+              }
+              if (!options.diff) {
+                return console.log(printer.list(outdated));
+              }
+              return;
+            }
+            return console.log(printer.list(reviews));
           },
         ),
     );
@@ -464,11 +487,12 @@ export async function main() {
       details?: boolean;
       model?: string;
       force?: boolean;
+      outdated?: boolean;
       all?: boolean;
       publish?: boolean;
     },
   ) {
-    const reviews = ReviewStore(storage);
+    const reviewStore = ReviewStore(storage);
     const issueStore = IssueStore(storage);
     const ollama = new Ollama(settings.ollama);
     const service = ReviewService(ollama, storage, settings);
@@ -476,6 +500,7 @@ export async function main() {
     await service
       .status()
       .catch(console.expect("Failed to connect to Ollama"));
+    if (options.outdated) return await reviewOutdated();
     if (options.all) return await reviewAll();
     if (!key) return console.die("issue key required when not using --all");
 
@@ -484,10 +509,10 @@ export async function main() {
       .catch(console.expect("Issue not found"))
       .then(reviewOne);
 
-    async function reviewOne(issue: Issue) {
+    async function reviewOne(issue: Issue, options_ = options) {
       console.log("reviewing", issue.key, "...");
-      const review = await service.review(issue, options);
-      if (options.publish) {
+      const review = await service.review(issue, options_);
+      if (options_.publish) {
         const { published, link } = await service.publish(review);
         if (published) {
           return console.info(Fmt.green(`Published ${issue.key}: ${link}`));
@@ -499,14 +524,23 @@ export async function main() {
       return console.log(printer.format(review));
     }
 
+    async function reviewOutdated() {
+      for await (const key of reviewStore.keys()) {
+        const issue = await issueStore
+          .get(key)
+          .catch(console.expect("Issue not found"));
+        const diff = await service.diff(issue);
+        if (diff.isOutdated || options.force) await reviewOne(issue);
+      }
+      return console.info("done");
+    }
+
     async function reviewAll() {
-      const keys = await Array
-        .fromAsync(reviews.keys())
-        .then((keys) => new Set(keys));
-      const issues = issueStore.list();
-      for await (const issue of issues) {
-        if (keys.has(issue.key) && !options.force) continue;
-        await reviewOne(issue);
+      for await (const issue of issueStore.list()) {
+        const diff = await service.diff(issue);
+        if (diff.isOutdated || options.force) {
+          await reviewOne(issue, { ...options, force: true });
+        }
       }
       return console.info("done");
     }
@@ -517,6 +551,7 @@ export async function main() {
     .description("Review an issue using AI")
     .argument("[issue-key]", "JIRA issue key")
     .option("--force", "Force a new review even if cached")
+    .option("--outdated", "Review only issues with outdated reviews")
     .option("--all", "Review all locally stored issues")
     .option(
       "-o, --format <format>",

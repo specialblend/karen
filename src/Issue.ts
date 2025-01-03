@@ -61,9 +61,7 @@ export type Comment = {
 export type IssueMeta = {
     id: string;
     key: string;
-    self: string;
     created: string;
-    updated: string;
     summary: string;
     creator: Author;
 };
@@ -122,11 +120,11 @@ export function IssuePrinter(options: PrinterOptions): Printer<Issue> {
 }
 
 export function serializeIssue(issue: Issue) {
-    const { id, key, self } = issue;
-    const { summary, description, created, updated, creator } = issue.fields;
+    const { id, key } = issue;
+    const { summary, description, created, creator } = issue.fields;
     const meta: IssueMeta = {
         ...{ id, key, summary },
-        ...{ self, created, updated, creator },
+        ...{ created, creator },
     };
     const header = Yaml.stringify(meta);
     const body = Jira2Md.to_markdown(description || "");
@@ -154,17 +152,11 @@ export async function deserializeEdit(text: string): Promise<Edit> {
     return { meta, description };
 }
 
-export function diffIssue(issue: Issue, edited: Issue) {
+export function diffIssue(issue: Issue, edited: Issue): string | null {
     const original = serializeIssue(issue);
     const updated = serializeIssue(edited);
     const filename = `${issue.key}.md`;
-    const patch = Diff.createPatch(filename, original, updated);
-    function fmtLine(line: string) {
-        if (line.startsWith("+")) return Fmt.green(line);
-        if (line.startsWith("-")) return Fmt.red(line);
-        return line;
-    }
-    return patch.split("\n").map(fmtLine).join("\n");
+    return console.diff(filename, original, updated);
 }
 
 function fmtBoard(data: any): Board {
