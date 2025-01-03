@@ -666,7 +666,7 @@ export function ListReviewsCommand(
     }
 }
 
-export function ListResource<T>(
+function ListResource<T>(
     store: Store<T>,
     Printer1: (options: PrinterOptions) => Printer<T> = DefaultPrinter,
     defaultOptions = { format: "yaml" },
@@ -681,7 +681,7 @@ export function ListResource<T>(
     };
 }
 
-export function GetResource<T>(
+function GetResource<T>(
     store: Store<T>,
     Printer1: (options: PrinterOptions) => Printer<T> = DefaultPrinter,
     defaultOptions = { format: "yaml" },
@@ -697,7 +697,7 @@ export function GetResource<T>(
     };
 }
 
-export function RemoveResource<T>(store: Store<T>) {
+function RemoveResource<T>(store: Store<T>) {
     return async function removeResource(
         key: string,
         options: { all?: boolean; force?: boolean } = {},
