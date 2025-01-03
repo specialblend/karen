@@ -4,6 +4,7 @@ import * as Fmt from "jsr:@std/fmt/colors";
 import * as Diff from "npm:diff";
 import { assert } from "jsr:@std/assert/assert";
 import { Store } from "./Store.ts";
+import { Printer, PrinterOptions } from "./Printer.ts";
 import { Console } from "./Console.ts";
 import { JIRA_PASSWORD, JIRA_URL, JIRA_USERNAME, remember } from "./Config.ts";
 
@@ -94,6 +95,32 @@ export function EditStore(storage: Deno.Kv): Store<Issue> {
     return Store<Issue>(["issues-edit"], storage);
 }
 
+export function IssuePrinter(options: PrinterOptions): Printer<Issue> {
+    const console = Console();
+    function summary(issue: Issue) {
+        const { key, fields } = issue;
+        const { summary, created, creator } = fields;
+        const { emailAddress } = creator;
+        return { key, summary, created, creator: { emailAddress } };
+    }
+    return {
+        format(issue) {
+            if (options.format === "markdown") return serializeIssue(issue);
+            return console.serialize(issue, options.format);
+        },
+        list(issues) {
+            if (options.format === "markdown") {
+                return issues.map(serializeIssue).join("\n---\n");
+            }
+            if (options.details) {
+                return console.serialize(issues, options.format);
+            }
+            const data = issues.map(summary);
+            return console.serialize(data, options.format);
+        },
+    };
+}
+
 export function serializeIssue(issue: Issue) {
     const { id, key, self } = issue;
     const { summary, description, created, updated, creator } = issue.fields;
@@ -171,14 +198,7 @@ function fmtIssue(data: any): Issue {
     const creator = fmtAuthor(_fields.creator);
     const comments = _fields.comment.comments.map(fmtComment);
     const comment = { comments };
-    const fields = {
-        summary,
-        description,
-        updated,
-        created,
-        creator,
-        comment,
-    };
+    const fields = { summary, description, updated, created, creator, comment };
     return { id, key, self, fields };
 }
 
@@ -332,15 +352,16 @@ export function IssueService(storage: Deno.Kv) {
         return comment;
     }
 
-    async function postComment(issue: Issue, body: string): Promise<Comment> {
+    async function postComment(issue: Issue, body_: string): Promise<Comment> {
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
-        const url = new URL(`/rest/api/2/issue/${issue.key}/comment`, baseUrl);
-        const request = new Request(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ body: body }),
-        });
+        const path = `/rest/api/2/issue/${issue.key}/comment`;
+        const url = await console
+            .trap(() => new URL(path, baseUrl))
+            .catch(console.pitch("Invalid issue key"));
+        const body = JSON.stringify({ body: body_ });
+        const payload = { method: "POST", headers, body };
+        const request = new Request(url, payload);
         const response = await fetch(request);
         if (!response.ok) throw response;
         const comment = await response.json().then(fmtComment);
@@ -357,7 +378,9 @@ export function IssueService(storage: Deno.Kv) {
         const baseUrl = await getBaseUrl();
         const headers = await getHeaders();
         const path = `/rest/api/2/issue/${issue.key}/comment/${comment.id}`;
-        const url = new URL(path, baseUrl);
+        const url = await console
+            .trap(() => new URL(path, baseUrl))
+            .catch(console.pitch("Invalid issue key or comment id"));
         url.searchParams.set("notifyUsers", "false");
         const body = JSON.stringify({ body: body_ });
         const payload = { method: "PUT", headers, body };

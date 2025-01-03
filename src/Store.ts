@@ -3,6 +3,7 @@ export interface Store<T> {
     get(key: string): Promise<T>;
     list(): AsyncGenerator<T>;
     keys(): AsyncGenerator<string>;
+    entries(): AsyncGenerator<Deno.KvEntry<T>>;
     remove(key: string): Promise<void>;
     removeAll(): Promise<void>;
 }
@@ -11,7 +12,7 @@ export function Store<T>(
     namespace: string[],
     storage: Deno.Kv,
 ): Store<T> {
-    return { put, get, list, keys, remove, removeAll };
+    return { put, get, list, remove, removeAll, keys, entries };
 
     async function put(key: string, value: T) {
         await storage.set([...namespace, key], value);
@@ -27,6 +28,11 @@ export function Store<T>(
     async function* list(): AsyncGenerator<T> {
         const cached = storage.list<T>({ prefix: namespace });
         for await (const entry of cached) yield entry.value;
+    }
+
+    async function* entries(): AsyncGenerator<Deno.KvEntry<T>> {
+        const cached = storage.list<T>({ prefix: namespace });
+        for await (const entry of cached) yield entry;
     }
 
     async function* keys(): AsyncGenerator<string> {
