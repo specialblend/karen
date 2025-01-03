@@ -6,6 +6,8 @@ import Jira2Md from "npm:jira2md";
 import { Issue, IssueService, serializeIssue } from "./Issue.ts";
 import { Store } from "./Store.ts";
 import { SettingsV1 } from "./Settings.ts";
+import { Printer, PrinterOptions } from "./Printer.ts";
+import { Console } from "./Console.ts";
 
 export type Review = {
     key: string;
@@ -42,6 +44,34 @@ export function ReviewStore(storage: Deno.Kv): Store<Review> {
     return Store<Review>(["reviews"], storage);
 }
 
+export function ReviewPrinter(options: PrinterOptions): Printer<Review> {
+    const console = Console();
+    function summary(review: Review) {
+        const { key, issue, score, normalizedEstimate } = review;
+        const { confidence, storyPoints } = normalizedEstimate;
+        const { summary } = issue.fields;
+        return { key, summary, score, confidence, storyPoints };
+    }
+    return {
+        format(review) {
+            if (options.format === "markdown") return fmtMarkdown(review);
+            if (options.details) {
+                return console.serialize(review, options.format);
+            }
+            return console.serialize(summary(review), options.format);
+        },
+        list(reviews) {
+            if (options.format === "markdown") {
+                return reviews.map(fmtMarkdown).join("\n---\n");
+            }
+            if (options.details) {
+                return console.serialize(reviews, options.format);
+            }
+            return console.serialize(reviews.map(summary), options.format);
+        },
+    };
+}
+
 export function ReviewService(
     ollama: Ollama,
     storage: Deno.Kv,
@@ -50,7 +80,7 @@ export function ReviewService(
     const reviewStore = ReviewStore(storage);
     const issueService = IssueService(storage);
 
-    return { status, review, publish, format };
+    return { status, review, publish };
 
     async function status() {
         await ollama.ps();
@@ -157,21 +187,9 @@ export function ReviewService(
     }
 
     async function publish(review: Review) {
-        const text = format(review, { format: "jira" });
+        const text = fmtJira(review);
         return await issueService.upsertComment(review.issue, text);
     }
-}
-
-function format(
-    review: Review,
-    options: { format: "jira" | "markdown" | "json" | "yaml" | string },
-): string {
-    const json = JSON.stringify(review);
-    if (options.format === "json") return json;
-    if (options.format === "yaml") return Yaml.stringify(JSON.parse(json));
-    const markdown = fmtReviewMarkdown(review);
-    if (options.format === "markdown") return markdown;
-    return Jira2Md.to_jira(markdown);
 }
 
 function calculateScore(checklist: ChecklistResult[]): number {
@@ -221,7 +239,11 @@ function fmtScore(review: Review) {
     return `${Math.round(review.score * 100)}%`;
 }
 
-function fmtReviewMarkdown(review: Review) {
+function fmtJira(review: Review) {
+    return Jira2Md.to_jira(fmtMarkdown(review));
+}
+
+function fmtMarkdown(review: Review) {
     const checklist = review.checklist.map(
         function fmtChecklistEntry({ entry, value }) {
             if (value) return `{color:green}**✓**{color} ${entry.description}`;

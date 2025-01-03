@@ -6,9 +6,10 @@ import * as Fmt from "jsr:@std/fmt/colors";
 
 import { ConfigStore, KnownConfigParams, remember } from "./src/Config.ts";
 import { Console } from "./src/Console.ts";
-import { ReviewService, ReviewStore } from "./src/Review.ts";
+import { ReviewPrinter, ReviewService, ReviewStore } from "./src/Review.ts";
 import { SettingsV1 } from "./src/Settings.ts";
 import { Store } from "./src/Store.ts";
+import { DefaultPrinter, Printer, PrinterOptions } from "./src/Printer.ts";
 
 import {
   BoardStore,
@@ -17,6 +18,7 @@ import {
   Edit,
   EditStore,
   Issue,
+  IssuePrinter,
   IssueService,
   IssueStore,
   MyCommentStore,
@@ -37,32 +39,33 @@ import {
 
 const console = Console();
 
-export function ListResource<T>(store: Store<T>) {
-  return async function listResource(
-    options: { details?: boolean; format?: string } = {},
-  ) {
-    if (options.details) {
-      return await Array
-        .fromAsync(store.list())
-        .then((data) => console.print(data, options.format))
-        .catch(console.die);
-    }
+export function ListResource<T>(
+  store: Store<T>,
+  Printer1: (options: PrinterOptions) => Printer<T> = DefaultPrinter,
+  defaultOptions = { format: "yaml" },
+) {
+  return async function listResource(options: PrinterOptions) {
+    const printer = Printer1({ ...defaultOptions, ...options });
     return await Array
-      .fromAsync(store.keys())
-      .then((data) => console.print(data, options.format))
+      .fromAsync(store.list())
+      .then(printer.list)
+      .then(console.log)
       .catch(console.die);
   };
 }
 
-export function GetResource<T>(store: Store<T>) {
-  return async function getResource(
-    key: string,
-    options: { format?: string } = {},
-  ) {
+export function GetResource<T>(
+  store: Store<T>,
+  Printer1: (options: PrinterOptions) => Printer<any> = DefaultPrinter,
+  defaultOptions = { format: "yaml" },
+) {
+  return async function getResource(key: string, options: PrinterOptions) {
+    const printer = Printer1({ ...defaultOptions, ...options });
     if (!key) return console.die("key required");
     return await store
       .get(key)
-      .then((data) => console.print(data, options?.format))
+      .then((data) => printer.format(data))
+      .then(console.log)
       .catch(console.expect("Not found"));
   };
 }
@@ -244,12 +247,12 @@ export async function main() {
         .description("List all stored issues")
         .option("--details", "Show full issue details")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(IssueStore(storage))),
+        .action(ListResource(IssueStore(storage), IssuePrinter)),
     );
 
   list
     .addCommand(
-      new Command("my-comments")
+      new Command("comments")
         .description("List all stored comments published by KAREN")
         .option("--details", "Show full comment details")
         .option("-o, --format <format>", "json or yaml", "yaml")
@@ -262,7 +265,7 @@ export async function main() {
         .description("List all stored edits")
         .option("--details", "Show full edit details")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(ListResource(EditStore(storage))),
+        .action(ListResource(EditStore(storage), IssuePrinter)),
     );
 
   list
@@ -271,28 +274,27 @@ export async function main() {
         .description("List all stored reviews")
         .option("--sort", "Sort reviews by score")
         .option("--threshold <score>", "Filter reviews below threshold score")
+        .option("--details", "Show full review details")
         .option("-o, --format <format>", "json or yaml", "yaml")
         .action(async function listReviews(options: {
+          format: string;
           details?: boolean;
-          format?: string;
           sort?: boolean;
           threshold?: string;
-        } = {}) {
+        } = { format: "markdown" }) {
           const store = ReviewStore(storage);
+          const printer = ReviewPrinter(options);
           let reviews = await Array.fromAsync(store.list());
-
           if (options.sort) {
             reviews = reviews.sort((a: any, b: any) => a.score - b.score);
           }
-
           if (options.threshold) {
             const threshold = parseFloat(options.threshold);
             reviews = reviews.filter((review: any) =>
               review.score <= threshold
             );
           }
-
-          return console.print(reviews, options.format);
+          return console.log(printer.list(reviews));
         }),
     );
 
@@ -306,20 +308,7 @@ export async function main() {
       .description("Get stored issue")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "json or yaml", "yaml")
-      .action(
-        async function getIssue(
-          key: string,
-          options: { format?: string } = {},
-        ) {
-          const issue = await IssueStore(storage)
-            .get(key)
-            .catch(console.expect("Issue not found"));
-          if (options.format === "markdown") {
-            return console.log(serializeIssue(issue));
-          }
-          return console.print(issue, options.format);
-        },
-      ),
+      .action(GetResource(IssueStore(storage), IssuePrinter)),
   );
 
   get.addCommand(
@@ -327,20 +316,7 @@ export async function main() {
       .description("Get stored edit")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "json, yaml, or markdown", "yaml")
-      .action(
-        async function getEdit(
-          key: string,
-          options: { format?: string } = {},
-        ) {
-          const edit = await EditStore(storage)
-            .get(key)
-            .catch(console.expect("Edit not found"));
-          if (options.format === "markdown") {
-            return console.log(serializeIssue(edit));
-          }
-          return console.print(edit, options.format);
-        },
-      ),
+      .action(GetResource(EditStore(storage), IssuePrinter)),
   );
 
   get.addCommand(
@@ -356,7 +332,7 @@ export async function main() {
       .description("Get stored review")
       .argument("[issue-key]", "JIRA issue key")
       .option("-o, --format <format>", "Output format (json or yaml)", "yaml")
-      .action(GetResource(ReviewStore(storage))),
+      .action(GetResource(ReviewStore(storage), ReviewPrinter)),
   );
 
   const remove = program
@@ -483,6 +459,7 @@ export async function main() {
     key: string,
     options: {
       format: "markdown" | "json" | "yaml" | "jira";
+      details?: boolean;
       model?: string;
       force?: boolean;
       all?: boolean;
@@ -493,6 +470,7 @@ export async function main() {
     const issueStore = IssueStore(storage);
     const ollama = new Ollama(settings.ollama);
     const service = ReviewService(ollama, storage, settings);
+    const printer = ReviewPrinter(options);
     await service
       .status()
       .catch(console.expect("Failed to connect to Ollama"));
@@ -502,9 +480,7 @@ export async function main() {
     return await issueStore
       .get(key)
       .catch(console.expect("Issue not found"))
-      .then(reviewOne)
-      .then((review) => service.format(review, options))
-      .then(console.log);
+      .then(reviewOne);
 
     async function reviewOne(issue: Issue) {
       console.log("reviewing", issue.key, "...");
@@ -512,13 +488,13 @@ export async function main() {
       if (options.publish) {
         const { published, link } = await service.publish(review);
         if (published) {
-          console.info(Fmt.green(`Published ${issue.key}: ${link}`));
-          return review;
+          return console.info(Fmt.green(`Published ${issue.key}: ${link}`));
         }
-        console.error(Fmt.yellow(`Already published ${issue.key}: ${link}`));
-        return review;
+        return console.error(
+          Fmt.yellow(`Already published ${issue.key}: ${link}`),
+        );
       }
-      return review;
+      return console.log(printer.format(review));
     }
 
     async function reviewAll() {
@@ -545,6 +521,7 @@ export async function main() {
       "Output format (json, yaml, markdown)",
       "markdown",
     )
+    .option("--details", "Show full review details")
     .option("--model <model>", "Ollama model to use", settings.ollama.model)
     .option("--publish", "Publish the review to JIRA")
     .action(review);

@@ -3,14 +3,22 @@ import * as Yaml from "jsr:@std/yaml";
 import { ConfigParam } from "./Config.ts";
 
 export function Console() {
-    return { ...console, print, mask, pitch, expect, die, ask };
+    return {
+        ...console,
+        ...{ serialize, print, mask },
+        ...{ trap, pitch, expect, die, ask },
+    };
+}
+
+function serialize(obj: any, format: string = "yaml") {
+    const json = JSON.stringify(obj);
+    if (format === "json") return json;
+    const data = JSON.parse(json);
+    return Yaml.stringify(data);
 }
 
 function print(obj: any, format: string = "yaml"): void {
-    const json = JSON.stringify(obj);
-    if (format === "json") return console.log(json);
-    const data = JSON.parse(json);
-    return console.log(Yaml.stringify(data));
+    console.log(serialize(obj, format));
 }
 
 function mask(param: ConfigParam, value: string) {
@@ -37,4 +45,8 @@ function ask(param: ConfigParam, currentValue?: string | null) {
     const msg = `${param.key} (${param.name}):`;
     if (param.secret) return prompt(msg) ?? currentValue;
     return prompt(msg, currentValue || param.defaultValue);
+}
+
+async function trap<T>(fn: () => Promise<T> | T): Promise<T> {
+    return await fn();
 }
