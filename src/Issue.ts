@@ -130,7 +130,7 @@ export function serializeIssue(issue: Issue) {
     };
     const header = Yaml.stringify(meta);
     const body = Jira2Md.to_markdown(description || "");
-    return `---\n${header}---${body}`;
+    return `---\n${header}---\n\n${body}`;
 }
 
 export async function deserializeEdit(text: string): Promise<Edit> {
