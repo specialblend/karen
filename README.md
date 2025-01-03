@@ -88,7 +88,7 @@ karen review --all --publish
 
 ```shell
 # Show all issues sorted by score below 50%
-karen list reviews --sort --threshold 0.5
+karen list reviews --threshold 0.5
 ```
 
 ### Command Line Reference
