@@ -64,7 +64,7 @@ export function GetResource<T>(
     if (!key) return console.die("key required");
     return await store
       .get(key)
-      .then((data) => printer.format(data))
+      .then(printer.format)
       .then(console.log)
       .catch(console.expect("Not found"));
   };
