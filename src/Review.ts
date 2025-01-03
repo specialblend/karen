@@ -1,6 +1,5 @@
 import { Ollama } from "npm:ollama";
 import * as JSONSchema from "npm:jsonschema";
-import * as Diff from "npm:diff";
 import * as Yaml from "jsr:@std/yaml";
 import Jira2Md from "npm:jira2md";
 
@@ -42,10 +41,10 @@ export type ChecklistEntry = {
 };
 
 export type ReviewDiff = {
-    key: string;
-    hasReview: boolean;
-    isOutdated: boolean;
-    patch: string;
+    issue: Issue;
+    review?: Review;
+    patch?: string;
+    outdated: boolean;
 };
 
 export function ReviewStore(storage: Deno.Kv): Store<Review> {
@@ -100,26 +99,23 @@ export function ReviewService(
             .catch(() => null);
         if (!review) {
             return {
-                key: issue.key,
-                hasReview: false,
-                isOutdated: true,
-                patch: "",
+                issue,
+                outdated: true,
             };
         }
         const patch = diffIssue(review.issue, issue);
         if (patch) {
             return {
-                key: issue.key,
-                hasReview: true,
-                isOutdated: true,
+                issue,
+                review,
                 patch,
+                outdated: true,
             };
         }
         return {
-            key: issue.key,
-            hasReview: true,
-            isOutdated: false,
-            patch: "",
+            outdated: false,
+            issue,
+            review,
         };
     }
 

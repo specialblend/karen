@@ -6,7 +6,7 @@ export interface Printer<T> {
     list(value: T[]): string;
 }
 
-export type PrinterOptions = { format: string; details?: boolean };
+export type PrinterOptions = { format?: string; details?: boolean };
 
 export function DefaultPrinter<T>(
     options: PrinterOptions,
