@@ -1,9 +1,10 @@
 import { Ollama } from "npm:ollama";
 import * as JSONSchema from "npm:jsonschema";
+import * as Diff from "npm:diff";
 import * as Yaml from "jsr:@std/yaml";
 import Jira2Md from "npm:jira2md";
 
-import { Issue, IssueService, serializeIssue } from "./Issue.ts";
+import { diffIssue, Issue, IssueService, serializeIssue } from "./Issue.ts";
 import { Store } from "./Store.ts";
 import { SettingsV1 } from "./Settings.ts";
 import { Printer, PrinterOptions } from "./Printer.ts";
@@ -38,6 +39,13 @@ export type ChecklistEntry = {
     key: string;
     description: string;
     weight: number;
+};
+
+export type ReviewDiff = {
+    key: string;
+    hasReview: boolean;
+    isOutdated: boolean;
+    patch: string;
 };
 
 export function ReviewStore(storage: Deno.Kv): Store<Review> {
@@ -80,10 +88,39 @@ export function ReviewService(
     const reviewStore = ReviewStore(storage);
     const issueService = IssueService(storage);
 
-    return { status, review, publish };
+    return { status, review, publish, diff };
 
     async function status() {
         await ollama.ps();
+    }
+
+    async function diff(issue: Issue): Promise<ReviewDiff> {
+        const review = await reviewStore
+            .get(issue.key)
+            .catch(() => null);
+        if (!review) {
+            return {
+                key: issue.key,
+                hasReview: false,
+                isOutdated: true,
+                patch: "",
+            };
+        }
+        const patch = diffIssue(review.issue, issue);
+        if (patch) {
+            return {
+                key: issue.key,
+                hasReview: true,
+                isOutdated: true,
+                patch,
+            };
+        }
+        return {
+            key: issue.key,
+            hasReview: true,
+            isOutdated: false,
+            patch: "",
+        };
     }
 
     async function review(

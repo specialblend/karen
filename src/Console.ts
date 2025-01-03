@@ -1,11 +1,13 @@
 import * as Yaml from "jsr:@std/yaml";
+import * as Diff from "npm:diff";
+import * as Fmt from "jsr:@std/fmt/colors";
 
 import { ConfigParam } from "./Config.ts";
 
 export function Console() {
     return {
         ...console,
-        ...{ serialize, print, mask },
+        ...{ serialize, print, mask, diff },
         ...{ trap, pitch, expect, die, ask },
     };
 }
@@ -49,4 +51,19 @@ function ask(param: ConfigParam, currentValue?: string | null) {
 
 async function trap<T>(fn: () => Promise<T> | T): Promise<T> {
     return await fn();
+}
+
+export function diff(
+    filename: string,
+    original: string,
+    updated: string,
+): string | null {
+    if (original === updated) return null;
+    const patch = Diff.createPatch(filename, original, updated);
+    function fmtLine(line: string) {
+        if (line.startsWith("+")) return Fmt.green(line);
+        if (line.startsWith("-")) return Fmt.red(line);
+        return line;
+    }
+    return patch.split("\n").map(fmtLine).join("\n");
 }
