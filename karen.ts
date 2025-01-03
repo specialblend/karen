@@ -480,9 +480,7 @@ export async function main() {
     return await issueStore
       .get(key)
       .catch(console.expect("Issue not found"))
-      .then(reviewOne)
-      .then(printer.format)
-      .then(console.log);
+      .then(reviewOne);
 
     async function reviewOne(issue: Issue) {
       console.log("reviewing", issue.key, "...");
@@ -490,13 +488,13 @@ export async function main() {
       if (options.publish) {
         const { published, link } = await service.publish(review);
         if (published) {
-          console.info(Fmt.green(`Published ${issue.key}: ${link}`));
-          return review;
+          return console.info(Fmt.green(`Published ${issue.key}: ${link}`));
         }
-        console.error(Fmt.yellow(`Already published ${issue.key}: ${link}`));
-        return review;
+        return console.error(
+          Fmt.yellow(`Already published ${issue.key}: ${link}`),
+        );
       }
-      return review;
+      return console.log(printer.format(review));
     }
 
     async function reviewAll() {
