@@ -538,7 +538,9 @@ export async function main() {
     async function reviewAll() {
       for await (const issue of issueStore.list()) {
         const diff = await service.diff(issue);
-        if (diff.isOutdated || options.force) await reviewOne(issue);
+        if (diff.isOutdated || options.force) {
+          await reviewOne(issue, { ...options, force: true });
+        }
       }
       return console.info("done");
     }
