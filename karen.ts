@@ -56,7 +56,7 @@ export function ListResource<T>(
 
 export function GetResource<T>(
   store: Store<T>,
-  Printer1: (options: PrinterOptions) => Printer<any> = DefaultPrinter,
+  Printer1: (options: PrinterOptions) => Printer<T> = DefaultPrinter,
   defaultOptions = { format: "yaml" },
 ) {
   return async function getResource(key: string, options: PrinterOptions) {
@@ -271,31 +271,29 @@ export async function main() {
   list
     .addCommand(
       new Command("reviews")
-        .description("List all stored reviews")
-        .option("--sort", "Sort reviews by score")
+        .description("List all stored reviews sorted by score (lowest first)")
         .option("--threshold <score>", "Filter reviews below threshold score")
         .option("--details", "Show full review details")
         .option("-o, --format <format>", "json or yaml", "yaml")
-        .action(async function listReviews(options: {
-          format: string;
-          details?: boolean;
-          sort?: boolean;
-          threshold?: string;
-        } = { format: "markdown" }) {
-          const store = ReviewStore(storage);
-          const printer = ReviewPrinter(options);
-          let reviews = await Array.fromAsync(store.list());
-          if (options.sort) {
-            reviews = reviews.sort((a: any, b: any) => a.score - b.score);
-          }
-          if (options.threshold) {
-            const threshold = parseFloat(options.threshold);
-            reviews = reviews.filter((review: any) =>
-              review.score <= threshold
-            );
-          }
-          return console.log(printer.list(reviews));
-        }),
+        .action(
+          async function listReviews(options: {
+            format: string;
+            details?: boolean;
+            threshold?: string;
+          } = { format: "markdown" }) {
+            const store = ReviewStore(storage);
+            const printer = ReviewPrinter(options);
+            const threshold = options.threshold
+              ? parseFloat(options.threshold)
+              : 1;
+            const reviews = await Array
+              .fromAsync(store.list())
+              .then((reviews) => reviews.sort((a, b) => a.score - b.score))
+              .then((data) => data.filter(({ score }) => score <= threshold))
+              .then(printer.list);
+            return console.log(reviews);
+          },
+        ),
     );
 
   const get = program
